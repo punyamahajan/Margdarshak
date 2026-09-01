@@ -10,10 +10,12 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.student import Student
+    from app.models.transcript import Transcript
 
 
 class CallFlowType(str, enum.Enum):
     TRIAGE = "triage"
+    RESOURCE_DIAGNOSTIC = "resource_diagnostic"
     MATCHMAKER_UPGRADE = "matchmaker_upgrade"
 
 
@@ -22,6 +24,7 @@ class CallSession(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     agora_channel_id: Mapped[str] = mapped_column(String(255))
+    agora_agent_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     student_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("students.id"))
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -32,3 +35,8 @@ class CallSession(Base):
     )
 
     student: Mapped["Student"] = relationship(back_populates="call_sessions")
+    transcripts: Mapped[list["Transcript"]] = relationship(
+        back_populates="call_session",
+        cascade="all, delete-orphan",
+        order_by="Transcript.turn_index",
+    )

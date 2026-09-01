@@ -259,6 +259,17 @@ async def request_reveal(
             )
             if bridge is None:
                 raise MatchmakerError(f"bridge {bridge_id} does not exist")
+            if student_id not in (bridge.student_a_id, bridge.student_b_id):
+                raise MatchmakerError("student is not a participant in this bridge")
+            if bridge.status == BridgeStatus.REVEALED:
+                student_a = await db.get(Student, bridge.student_a_id)
+                student_b = await db.get(Student, bridge.student_b_id)
+                if student_a is None or student_b is None:
+                    raise MatchmakerError("bridge participant no longer exists")
+                return {
+                    "status": "revealed",
+                    "linkedin_urls": [student_a.linkedin_url, student_b.linkedin_url],
+                }
             if (
                 bridge.status != BridgeStatus.ACTIVE
                 or bridge.expires_at <= datetime.now(timezone.utc)

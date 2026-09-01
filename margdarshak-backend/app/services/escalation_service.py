@@ -12,6 +12,7 @@ from app.models.call_session import CallFlowType, CallSession
 from app.models.ticket import Ticket, TicketStatus
 from app.services.agora_service import handover_to_human
 from app.services.case_card_service import get_case_card
+from app.services.transcript_service import format_for_handoff
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,9 @@ class EscalationError(RuntimeError):
     pass
 
 
-def format_case_summary(case_card_json: dict[str, Any]) -> str:
+async def format_case_summary(
+    case_card_json: dict[str, Any], call_session_id: uuid.UUID
+) -> str:
     """Format the most useful case-card fields into a concise handoff brief."""
 
     labels = (
@@ -38,9 +41,11 @@ def format_case_summary(case_card_json: dict[str, Any]) -> str:
             rendered = value if isinstance(value, str) else json.dumps(value)
             lines.append(f"{label}: {rendered}")
 
+    transcript = await format_for_handoff(call_session_id)
     if not lines:
-        return "No structured case details are available yet."
-    return "\n".join(lines)[:2000]
+        lines.append("No structured case details are available yet.")
+    lines.extend(("Conversation:", transcript))
+    return "\n".join(lines)[:3500]
 
 
 async def trigger_escalation(
@@ -82,7 +87,7 @@ async def trigger_escalation(
             ticket.escalated_to = poc_contact
             ticket.roll_number_snapshot = ticket.student.roll_number
 
-            summary = format_case_summary(case_card)
+            summary = await format_case_summary(case_card, session_id)
             handover = await handover_to_human(
                 call_session.agora_channel_id, poc_contact, summary
             )

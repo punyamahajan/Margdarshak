@@ -2,8 +2,10 @@ import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.routes_matchmaker import router as matchmaker_router
+from app.api.v1.routes_resources import router as resources_router
 from app.api.v1.routes_dashboard import router as dashboard_router
 from app.api.v1.routes_tickets import router as tickets_router
 from app.api.v1.routes_voice import router as voice_router
@@ -29,9 +31,18 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
+# Permit the local static debug client without opening CORS to arbitrary origins.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type"],
+)
+
 app.include_router(voice_router, prefix="/api/v1")
 app.include_router(tickets_router, prefix="/api/v1")
 app.include_router(matchmaker_router, prefix="/api/v1")
+app.include_router(resources_router, prefix="/api/v1")
 app.include_router(dashboard_router, prefix="/api/v1")
 app.include_router(websocket_router)
 

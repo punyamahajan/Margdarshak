@@ -9,7 +9,12 @@ from app.db.base import Base
 import app.models  # noqa: F401 -- register every model with Base.metadata
 
 config = context.config
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+# ConfigParser uses ``%`` for interpolation. Database URLs commonly contain
+# percent-encoded credentials (for example, ``@`` becomes ``%40``), so escape
+# percent signs while storing the URL in Alembic's configuration.
+config.set_main_option(
+    "sqlalchemy.url", get_settings().database_url.replace("%", "%%")
+)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

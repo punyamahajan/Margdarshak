@@ -13,7 +13,13 @@ class Settings(BaseSettings):
     redis_url: str
     agora_app_id: str
     agora_app_certificate: SecretStr
+    agora_customer_id: str = ""
+    agora_customer_secret: SecretStr = SecretStr("")
     agora_ai_agent: str
+    agora_agent_rtc_uid: int = 1
+    agora_convo_ai_base_url: str = (
+        "https://api.agora.io/api/conversational-ai-agent/v2/projects"
+    )
     agora_token_ttl_seconds: int = 3600
     triage_session_ttl_seconds: int = 86400
     expiry_worker_interval_seconds: int = 60

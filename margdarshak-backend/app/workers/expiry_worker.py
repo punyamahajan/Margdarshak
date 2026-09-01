@@ -22,7 +22,13 @@ async def expire_due_bridges() -> int:
                 await db.scalars(
                     select(ChatBridge)
                     .where(
-                        ChatBridge.status == BridgeStatus.ACTIVE,
+                        ChatBridge.status.in_(
+                            (
+                                BridgeStatus.ACTIVE,
+                                BridgeStatus.REVEALED,
+                                BridgeStatus.UPGRADED_TO_VOICE,
+                            )
+                        ),
                         ChatBridge.expires_at < datetime.now(timezone.utc),
                     )
                     .with_for_update(skip_locked=True)

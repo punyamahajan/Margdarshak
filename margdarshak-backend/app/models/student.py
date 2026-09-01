@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from app.models.chat_bridge import ChatBridge
     from app.models.consent_reveal import ConsentReveal
     from app.models.ticket import Ticket
+    from app.models.resource import ResourceRecommendation
 
 
 class Student(Base):
@@ -36,5 +37,8 @@ class Student(Base):
         back_populates="student_b", foreign_keys="ChatBridge.student_b_id"
     )
     consent_reveals: Mapped[list["ConsentReveal"]] = relationship(
+        back_populates="student"
+    )
+    resource_recommendations: Mapped[list["ResourceRecommendation"]] = relationship(
         back_populates="student"
     )

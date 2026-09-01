@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Margdarshak Call Test Client</title>
+  </head>
+  <body>
+    <main>
+      <h1>Margdarshak Call Test Client</h1>
+      <label for="student-id">Student UUID</label>
+      <input id="student-id" type="text" size="40" autocomplete="off"
+        placeholder="00000000-0000-0000-0000-000000000000">
+      <p>
+        <button id="start-call" type="button">Start Call</button>
+        <button id="hang-up" type="button" disabled>Hang Up</button>
+      </p>
+      <section aria-live="polite">
+        <p>Connection: <strong id="connection-state">idle</strong></p>
+        <p>Call session ID: <code id="session-id">—</code></p>
+        <p id="detail"></p>
+      </section>
+    </main>
+    <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.22.2.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

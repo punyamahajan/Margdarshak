@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Margdarshak">
+  <rect width="512" height="512" rx="116" fill="#FAF7F0"/>
+  <path d="M151 347V175c0-17 14-31 31-31h18l56 81 56-81h18c17 0 31 14 31 31v172" fill="none" stroke="#2E2E2C" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="256" cy="338" r="28" fill="#87977B"/>
+</svg>

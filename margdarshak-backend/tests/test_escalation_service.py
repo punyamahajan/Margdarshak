@@ -48,7 +48,7 @@ def test_trigger_escalation_only_reads_placement_drives(monkeypatch) -> None:
         student_id=student_id,
         drive_id=drive_id,
         issue_summary="Portal issue",
-        transcript_ref="agora://test",
+        transcript_ref=str(session_id),
         confidence_score=0.5,
         status=TicketStatus.OPEN,
         escalated_to="",
@@ -74,7 +74,12 @@ def test_trigger_escalation_only_reads_placement_drives(monkeypatch) -> None:
         return {"issue_summary": "Portal issue", "confidence_score": 0.5}
 
     async def fake_handover(channel_name, poc_contact, summary):
+        assert "Student: The portal failed before the deadline." in summary
         return {"status": "handover_pending"}
+
+    async def fake_format_for_handoff(requested_session_id):
+        assert requested_session_id == session_id
+        return "Student: The portal failed before the deadline."
 
     monkeypatch.setattr(
         escalation_service, "get_session_factory", lambda: lambda: fake_session
@@ -84,6 +89,9 @@ def test_trigger_escalation_only_reads_placement_drives(monkeypatch) -> None:
     )
     monkeypatch.setattr(escalation_service, "get_case_card", fake_get_case_card)
     monkeypatch.setattr(escalation_service, "handover_to_human", fake_handover)
+    monkeypatch.setattr(
+        escalation_service, "format_for_handoff", fake_format_for_handoff
+    )
 
     result = asyncio.run(escalation_service.trigger_escalation(session_id, ticket_id))
 
