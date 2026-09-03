@@ -32,6 +32,14 @@ def test_generate_icebreaker_mentions_specific_common_context() -> None:
     assert message.endswith("?")
 
 
+def test_demo_reply_is_specific_and_transparent() -> None:
+    greeting = matchmaker_service.generate_demo_reply("hi")
+    backend = matchmaker_service.generate_demo_reply("I am learning FastAPI")
+
+    assert "demo match" in greeting.lower()
+    assert "backend" in backend.lower()
+
+
 def test_add_message_does_not_extend_existing_ttl(monkeypatch) -> None:
     bridge_id = uuid.uuid4()
     bridge = ChatBridge(

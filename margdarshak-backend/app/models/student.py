@@ -23,6 +23,9 @@ class Student(Base):
     name: Mapped[str] = mapped_column(String(255))
     email: Mapped[str] = mapped_column(String(320))
     branch: Mapped[str] = mapped_column(String(100))
+    university: Mapped[str] = mapped_column(
+        String(255), default="Aarohan Demo University"
+    )
     phone: Mapped[str] = mapped_column(String(30))
     linkedin_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     tags: Mapped[list[str]] = mapped_column(JSONB, default=list)

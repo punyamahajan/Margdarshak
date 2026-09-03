@@ -10,6 +10,7 @@ class StudentCreate(ORMModel):
     name: str
     email: str
     branch: str
+    university: str = "Aarohan Demo University"
     phone: str
     linkedin_url: str | None = None
     tags: list[str] = Field(default_factory=list)

@@ -49,7 +49,11 @@ def extract_criteria(
     skill: str | None = None
     skill_patterns = (
         ("system_design", r"\bsystem\s+design\b|\bdistributed\s+systems?\b"),
-        ("web_dev", r"\bweb\s+(?:dev|development)\b|\bfrontend\b|\bfull[ -]?stack\b"),
+        (
+            "web_dev",
+            r"\bweb\s+(?:dev|development)\b|\bfrontend\b|\bfull[ -]?stack\b|"
+            r"\b(?:software|website|backend)\s+development\b|\bdevelopment\b",
+        ),
         ("dbms", r"\bdbms\b|\bdatabase(?:s)?\b|\bsql\b"),
         ("os", r"\boperating\s+systems?\b|\bos\s+(?:course|concepts?|study)\b"),
         ("dsa", r"\bdsa\b|\bdata\s+structures?\b|\balgorithms?\b"),
@@ -60,7 +64,7 @@ def extract_criteria(
             break
 
     pacing: str | None = None
-    if re.search(r"\b(short|quick|crash|rapid|concise|revision)\b", text):
+    if re.search(r"\b(short|shortcut|quick|crash|rapid|concise|revision)\b", text):
         pacing = "short"
     elif re.search(r"\b(long|deep[ -]?dive|detailed|comprehensive|in[ -]?depth)\b", text):
         pacing = "long"

@@ -75,13 +75,15 @@ async def trigger_escalation(
             if ticket.drive_id is None and case_card.get("drive_id"):
                 ticket.drive_id = uuid.UUID(str(case_card["drive_id"]))
             if ticket.drive_id is None:
-                raise EscalationError("ticket has no placement drive for POC handoff")
-
-            # Placement-drive access is deliberately isolated behind the SELECT-only gateway.
-            drive = await query_drive_policy(ticket.drive_id)
-            poc_contact = str(drive.get("poc_contact", "")).strip()
-            if not poc_contact:
-                raise EscalationError("placement drive has no POC contact")
+                # An urgent student should not be blocked because they do not know
+                # an internal drive UUID. Route it to the demo placement desk.
+                poc_contact = "demo-placement-support-desk"
+            else:
+                # Placement-drive access is deliberately isolated behind the SELECT-only gateway.
+                drive = await query_drive_policy(ticket.drive_id)
+                poc_contact = str(drive.get("poc_contact", "")).strip()
+                if not poc_contact:
+                    poc_contact = "demo-placement-support-desk"
 
             ticket.status = TicketStatus.ESCALATED
             ticket.escalated_to = poc_contact

@@ -1,11 +1,15 @@
 import json
+import re
 import uuid
 from typing import Any
+
+from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.db.redis import get_redis_client
 from app.db.session_factory import get_session_factory
 from app.models.call_session import CallSession
+from app.models.ticket import Ticket
 from app.models.transcript import TranscriptSpeaker
 from app.services.resource_diagnostic_service import (
     DiagnosticCriteria,
@@ -13,11 +17,17 @@ from app.services.resource_diagnostic_service import (
     recommend,
 )
 from app.services.transcript_service import append_turn
+from app.services.case_card_service import update_case_card
 
 QUESTIONS = (
     ("skill", "Which skill do you want to learn—for example, Java DSA or System Design?"),
     ("pacing", "Do you want a short crash course or a long deep-dive?"),
     ("delivery", "Would you prefer a hands-on sheet or video, and must it be free or can it be paid?"),
+)
+
+LINK_REQUEST_PATTERN = re.compile(
+    r"\b(?:link|url|resource)\b|\b(?:send|give|share|show|place|paste|attach)\b.*\blink\b",
+    re.IGNORECASE,
 )
 
 
@@ -31,6 +41,16 @@ async def _student_id_for_session(session_id: uuid.UUID) -> uuid.UUID:
     if call_session is None:
         raise ValueError(f"call session {session_id} does not exist")
     return call_session.student_id
+
+
+async def _ticket_id_for_session(session_id: uuid.UUID) -> uuid.UUID:
+    async with get_session_factory()() as db:
+        ticket_id = await db.scalar(
+            select(Ticket.id).where(Ticket.transcript_ref == str(session_id))
+        )
+    if ticket_id is None:
+        raise ValueError(f"call session {session_id} has no associated ticket")
+    return ticket_id
 
 
 async def _load_state(session_id: uuid.UUID | str) -> dict[str, Any]:
@@ -82,6 +102,26 @@ async def handle_resource_turn(
         if value is not None:
             criteria[key] = value
 
+    # When the student explicitly asks for the link after naming a topic, do
+    # not strand them in a preference loop. Use transparent, conservative
+    # defaults for anything still missing; the recommender can relax them if
+    # no exact resource exists.
+    if criteria["skill"] and LINK_REQUEST_PATTERN.search(chunk):
+        criteria["pacing"] = criteria["pacing"] or "short"
+        criteria["format"] = criteria["format"] or "sheet"
+        criteria["budget"] = criteria["budget"] or "free"
+    ticket_id = await _ticket_id_for_session(normalized_session_id)
+    await update_case_card(
+        ticket_id,
+        {
+            "request_type": "learning_resource",
+            "topic": criteria["skill"],
+            "study_pace": criteria["pacing"],
+            "study_style": criteria["format"],
+            "budget": criteria["budget"],
+        },
+    )
+
     if all(criteria.values()):
         student_id = await _student_id_for_session(normalized_session_id)
         resource = await recommend(
@@ -98,6 +138,10 @@ async def handle_resource_turn(
         }
         state["complete"] = True
         state["recommendation"] = recommendation
+        await update_case_card(
+            ticket_id,
+            {"recommended_resource": resource.title, "resource_url": resource.url},
+        )
         await _save_state(session_id, state)
         return {
             "flow_type": "resource_diagnostic",

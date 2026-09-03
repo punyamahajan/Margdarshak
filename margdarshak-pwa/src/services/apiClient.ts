@@ -44,7 +44,24 @@ export type VoiceSession = {
   channel_name: string;
   uid: number;
   rtc_token: string;
+  rtm_token: string;
   agent: Record<string, unknown>;
+};
+
+export type TranscriptTurn = {
+  id: string;
+  call_session_id: string;
+  turn_index: number;
+  speaker: "student" | "agent" | "human_coordinator";
+  content: string;
+  timestamp: string;
+};
+
+export type VoiceHistorySession = {
+  session_id: string;
+  started_at: string;
+  ended_at: string | null;
+  turns: TranscriptTurn[];
 };
 
 export type VoiceSessionStatus = {
@@ -52,6 +69,7 @@ export type VoiceSessionStatus = {
   ended_at: string | null;
   escalated: boolean;
   poc_name: string | null;
+  handoff_status: "queued_for_human_support" | null;
 };
 
 export type TicketWithCaseCard = {
@@ -117,6 +135,22 @@ export const apiClient = {
     );
   },
 
+  getVoiceHistory(studentId: string) {
+    return request<VoiceHistorySession[]>(
+      `/voice/history/${encodeURIComponent(studentId)}`
+    );
+  },
+
+  ingestTranscript(
+    sessionId: string,
+    turn: { speaker: TranscriptTurn["speaker"]; content: string; is_final?: boolean }
+  ) {
+    return request<{ accepted: boolean }>(
+      `/voice/session/${encodeURIComponent(sessionId)}/transcript`,
+      { method: "POST", body: { ...turn, is_final: turn.is_final ?? true } }
+    );
+  },
+
   getTicket(ticketId: string) {
     return request<TicketWithCaseCard>(`/tickets/${encodeURIComponent(ticketId)}`);
   },
@@ -153,6 +187,13 @@ export const apiClient = {
   getResourceRecommendation(sessionId: string) {
     return request<ResourceRecommendation>(
       `/resources/recommendations/${encodeURIComponent(sessionId)}`
+    );
+  },
+
+  ensureResourceRecommendation(sessionId: string) {
+    return request<ResourceRecommendation>(
+      `/resources/recommendations/${encodeURIComponent(sessionId)}/ensure`,
+      { method: "POST" }
     );
   }
 };

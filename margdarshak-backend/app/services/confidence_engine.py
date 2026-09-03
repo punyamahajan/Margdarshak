@@ -9,6 +9,9 @@ _TIME_SENSITIVE_PATTERNS = (
     r"\bportal (?:is )?down\b",
     r"\bdeadline (?:is )?(?:today|tonight|tomorrow)\b",
     r"\bunable to (?:submit|apply|login|log in)\b",
+    r"\b(?:urgent|emergency|immediately|right now)\b",
+    r"\b(?:last date|deadline) (?:is )?(?:today|tonight|tomorrow)\b",
+    r"\b(?:can(?:not|'t)|could(?: not|n't)) (?:submit|apply|login|log in)\b",
 )
 
 

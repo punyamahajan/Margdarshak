@@ -20,7 +20,9 @@ async def send_resource_link(student_id: uuid.UUID, resource: Resource) -> None:
         extra={
             "student_id": str(student_id),
             "resource_id": str(resource.id),
-            "message": message,
+            # `message` is a reserved LogRecord attribute and raises KeyError
+            # when supplied through `extra`.
+            "notification_text": message,
             "delivery_status": "not_sent_stub",
         },
     )

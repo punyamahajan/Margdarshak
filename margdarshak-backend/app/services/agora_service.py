@@ -5,6 +5,7 @@ from typing import Any
 import httpx
 
 from app.core.config import get_settings
+from app.services.agora_token007 import build_rtc_rtm_token
 
 
 class AgoraServiceError(RuntimeError):
@@ -41,6 +42,23 @@ def generate_rtc_token(channel_name: str, uid: int) -> str:
         raise AgoraServiceError("failed to generate Agora RTC token") from exc
 
 
+def generate_rtc_rtm_token(channel_name: str, uid: int) -> str:
+    """Generate the current multi-service token used by RTC and RTM."""
+
+    settings = get_settings()
+    expires_at = int(time.time()) + settings.agora_token_ttl_seconds
+    try:
+        return build_rtc_rtm_token(
+            settings.agora_app_id,
+            settings.agora_app_certificate.get_secret_value(),
+            channel_name,
+            str(uid),
+            expires_at,
+        )
+    except Exception as exc:
+        raise AgoraServiceError("failed to generate Agora RTC+RTM token") from exc
+
+
 def _convo_ai_auth() -> tuple[str, str]:
     settings = get_settings()
     customer_secret = settings.agora_customer_secret.get_secret_value()
@@ -51,7 +69,13 @@ def _convo_ai_auth() -> tuple[str, str]:
     return settings.agora_customer_id, customer_secret
 
 
-async def start_agent_session(channel_name: str, remote_uid: int) -> dict[str, Any]:
+async def start_agent_session(
+    channel_name: str,
+    remote_uid: int,
+    *,
+    student_context: str = "",
+    prior_context: str = "",
+) -> dict[str, Any]:
     """Start the configured Conversational AI agent on an RTC channel."""
 
     if not channel_name.strip():
@@ -70,6 +94,22 @@ async def start_agent_session(channel_name: str, remote_uid: int) -> dict[str, A
     # AGORA_AI_AGENT is the published Agent Studio pipeline ID. The runtime
     # agent ID is created by this request and is a different value.
     agent_token = generate_rtc_token(channel_name, agent_uid)
+    system_context = f"""You are Margdarshak, a warm, concise campus placement and learning guide.
+Known student profile: {student_context or 'No profile is available.'}
+Relevant earlier conversation: {prior_context or 'None.'}
+
+Never ask for facts already present in the known profile. Address the student by first name.
+First identify whether they need placement support or a learning resource.
+For a learning resource, collect only missing details: exact skill/topic, preferred study style
+(hands-on practice, video lessons, or reading), desired pace (short crash course or deep dive),
+and budget (free or paid). Ask one specific question at a time and briefly reflect newly learned
+facts. When the student mentions any placement issue, your first follow-up must ask whether it is
+urgent or time-sensitive, unless they already clearly said so. If they confirm it is urgent, say
+you are marking it urgent and that a call-support button will appear; do not claim a phone call has
+already been placed. Then identify the company/drive, concrete issue, and desired resolution.
+Avoid generic questions such as 'tell me more'. Do not invent university policies,
+deadlines, courses, or student facts. Never read a URL aloud; say that the link has been added to
+the live card so the student can open or copy it. Keep spoken replies under three sentences."""
     request_body = {
         "name": f"margdarshak-{uuid.uuid4().hex}",
         "pipeline_id": settings.agora_ai_agent,
@@ -80,6 +120,18 @@ async def start_agent_session(channel_name: str, remote_uid: int) -> dict[str, A
             "remote_rtc_uids": [str(remote_uid)],
             "enable_string_uid": False,
             "idle_timeout": 120,
+            "llm": {
+                "system_messages": [{"role": "system", "content": system_context}],
+                "greeting_message": (
+                    "Hi! I already have your student profile. Are we working on a "
+                    "placement issue or finding the right learning resource today?"
+                ),
+            },
+            "advanced_features": {"enable_rtm": True},
+            "parameters": {
+                "data_channel": "rtm",
+                "transcript": {"enable": True, "protocol_version": "v2"},
+            },
         },
     }
     url = (

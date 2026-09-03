@@ -9,12 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.db.session import get_db_session
 from app.models.call_session import CallFlowType, CallSession
+from app.models.case_card import CaseCard
 from app.models.student import Student
 from app.models.placement_drive import PlacementDrive
 from app.models.ticket import Ticket, TicketStatus
 from app.services.agora_service import (
     AgoraServiceError,
     generate_rtc_token,
+    generate_rtc_rtm_token,
     start_agent_session,
     stop_agent_session,
 )
@@ -22,6 +24,8 @@ from app.services.conversation_orchestrator import (
     handle_conversation_turn,
     initialize_triage_session,
 )
+from app.services.transcript_service import append_turn, get_transcript
+from app.models.transcript import Transcript, TranscriptSpeaker
 
 router = APIRouter(prefix="/voice", tags=["voice"])
 
@@ -39,11 +43,18 @@ class StartVoiceSessionResponse(BaseModel):
     channel_name: str
     uid: int
     rtc_token: str
+    rtm_token: str
     agent: dict[str, object]
 
 
 class TriageTurnRequest(BaseModel):
     transcript_chunk: str = Field(min_length=1)
+
+
+class TranscriptEventRequest(BaseModel):
+    speaker: TranscriptSpeaker
+    content: str = Field(min_length=1)
+    is_final: bool = True
 
 
 @router.post(
@@ -56,7 +67,8 @@ async def start_voice_session(
     db: AsyncSession = Depends(get_db_session),
 ) -> StartVoiceSessionResponse:
     try:
-        rtc_token = generate_rtc_token(payload.channel_name, payload.uid)
+        rtc_token = generate_rtc_rtm_token(payload.channel_name, payload.uid)
+        rtm_token = rtc_token
         student = await db.scalar(select(Student).where(Student.id == payload.student_id))
         if student is None:
             raise HTTPException(status_code=404, detail="student not found")
@@ -79,7 +91,44 @@ async def start_voice_session(
         )
         db.add(ticket)
         await db.flush()
-        agent = await start_agent_session(payload.channel_name, payload.uid)
+        db.add(
+            CaseCard(
+                ticket_id=ticket.id,
+                structured_json={
+                    "student_name": student.name,
+                    "university": student.university,
+                    "branch": student.branch,
+                    "roll_number": student.roll_number,
+                    "interests": student.tags,
+                },
+            )
+        )
+        previous_turns = (
+            await db.scalars(
+                select(Transcript)
+                .join(CallSession, Transcript.call_session_id == CallSession.id)
+                .where(
+                    CallSession.student_id == payload.student_id,
+                    CallSession.id != call_session.id,
+                )
+                .order_by(Transcript.timestamp.desc())
+                .limit(12)
+            )
+        ).all()
+        prior_context = "\n".join(
+            f"{turn.speaker.value}: {turn.content}" for turn in reversed(previous_turns)
+        )
+        student_context = (
+            f"Name: {student.name}; university: {student.university}; "
+            f"branch: {student.branch}; roll number: {student.roll_number}; "
+            f"interests: {', '.join(student.tags) or 'not recorded'}"
+        )
+        agent = await start_agent_session(
+            payload.channel_name,
+            payload.uid,
+            student_context=student_context,
+            prior_context=prior_context,
+        )
         call_session.agora_agent_id = str(agent["agent_id"])
         await initialize_triage_session(call_session.id, ticket.id)
         await db.commit()
@@ -97,8 +146,53 @@ async def start_voice_session(
         channel_name=payload.channel_name,
         uid=payload.uid,
         rtc_token=rtc_token,
+        rtm_token=rtm_token,
         agent=agent,
     )
+
+
+@router.get("/session/{session_id}/transcript")
+async def read_voice_transcript(session_id: uuid.UUID) -> list[dict[str, object]]:
+    return await get_transcript(session_id)
+
+
+@router.get("/history/{student_id}")
+async def read_student_voice_history(
+    student_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+) -> list[dict[str, object]]:
+    sessions = (
+        await db.scalars(
+            select(CallSession)
+            .where(CallSession.student_id == student_id)
+            .order_by(CallSession.started_at.desc())
+            .limit(10)
+        )
+    ).all()
+    return [
+        {
+            "session_id": str(session.id),
+            "started_at": session.started_at,
+            "ended_at": session.ended_at,
+            "turns": await get_transcript(session.id),
+        }
+        for session in sessions
+    ]
+
+
+@router.post("/session/{session_id}/transcript")
+async def ingest_voice_transcript(
+    session_id: uuid.UUID, payload: TranscriptEventRequest
+) -> dict[str, object]:
+    """Persist final Agora RTM transcript turns and update orchestration state."""
+
+    if not payload.is_final:
+        return {"accepted": False, "reason": "interim"}
+    if payload.speaker == TranscriptSpeaker.STUDENT:
+        result = await handle_conversation_turn(session_id, payload.content)
+        return {"accepted": True, "orchestration": result}
+    await append_turn(session_id, payload.speaker, payload.content)
+    return {"accepted": True}
 
 
 @router.post("/session/{session_id}/turn")
@@ -160,4 +254,7 @@ async def get_voice_session_status(
         "ended_at": call_session.ended_at,
         "escalated": escalated,
         "poc_name": drive.poc_name if escalated and drive is not None else None,
+        "handoff_status": (
+            "queued_for_human_support" if escalated else None
+        ),
     }

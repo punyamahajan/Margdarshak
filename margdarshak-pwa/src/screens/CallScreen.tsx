@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Waveform } from "../components/Waveform";
 import {
   SummaryCard,
@@ -6,7 +6,12 @@ import {
   type SummaryCardVariant
 } from "../components/SummaryCard";
 import { useAgoraCall } from "../hooks/useAgoraCall";
-import { apiClient, type VoiceSession } from "../services/apiClient";
+import {
+  apiClient,
+  type ResourceRecommendation,
+  type VoiceHistorySession,
+  type VoiceSession
+} from "../services/apiClient";
 
 type CallScreenProps = {
   onBack: () => void;
@@ -37,21 +42,64 @@ function readableValue(value: unknown): string {
   return rendered.length > 96 ? `${rendered.slice(0, 93)}...` : rendered;
 }
 
+function isWebLink(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+function linksInText(value: string): string[] {
+  return (value.match(/https?:\/\/[^\s<>"']+/g) ?? [])
+    .map((link) => link.replace(/[),.;!?]+$/, ""))
+    .filter(isWebLink);
+}
+
 const STUDENT_ID = import.meta.env.VITE_STUDENT_ID as string | undefined;
+const URGENT_SUPPORT_PHONE = "6397204766";
+
+function sessionTitle(history: VoiceHistorySession): string {
+  const firstStudentTurn = history.turns.find((turn) => turn.speaker === "student");
+  if (!firstStudentTurn) return "Voice guidance conversation";
+  const title = firstStudentTurn.content.trim();
+  return title.length > 56 ? `${title.slice(0, 53)}...` : title;
+}
+
+function sessionDate(value: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
 
 export function CallScreen({ onBack }: CallScreenProps) {
   const [session, setSession] = useState<VoiceSession | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
   const [agentNotice, setAgentNotice] = useState<string | null>(null);
   const [handoffName, setHandoffName] = useState<string | null>(null);
+  const [escalated, setEscalated] = useState(false);
   const [ending, setEnding] = useState(false);
   const [liveSummary, setLiveSummary] = useState<LiveSummary | null>(null);
   const [summaryVisible, setSummaryVisible] = useState(false);
+  const [caseCard, setCaseCard] = useState<Record<string, unknown>>({});
+  const [resourceRecommendation, setResourceRecommendation] = useState<ResourceRecommendation | null>(null);
+  const [linkTopic, setLinkTopic] = useState("");
+  const [linkRequestBusy, setLinkRequestBusy] = useState(false);
+  const [linkRequestError, setLinkRequestError] = useState<string | null>(null);
+  const [earlierSessions, setEarlierSessions] = useState<VoiceHistorySession[]>([]);
+  const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const startedRef = useRef(false);
   const handoffSeenRef = useRef(false);
   const previousCaseCardRef = useRef<Record<string, unknown>>({});
   const previousTicketStatusRef = useRef<string | null>(null);
   const summaryTimerRef = useRef<number | null>(null);
+  const persistedTurnsRef = useRef(new Set<string>());
+  const persistedContentRef = useRef(new Set<string>());
   const {
     callState,
     audioLevels,
@@ -60,8 +108,10 @@ export function CallScreen({ onBack }: CallScreenProps) {
     microphoneReady,
     doneSpeaking,
     finishSpeaking,
-    resumeSpeaking
+    resumeSpeaking,
+    transcript
   } = useAgoraCall(session);
+  const resourceRequestDetected = caseCard.request_type === "learning_resource";
 
   useEffect(() => {
     if (startedRef.current) return;
@@ -74,6 +124,11 @@ export function CallScreen({ onBack }: CallScreenProps) {
       .startVoiceSession(STUDENT_ID)
       .then((startedSession) => {
         setSession(startedSession);
+        void apiClient.getVoiceHistory(STUDENT_ID).then((history) => {
+          setEarlierSessions(
+            history.filter((item) => item.session_id !== startedSession.session_id)
+          );
+        }).catch(() => undefined);
         if (startedSession.agent.status === "start_pending") {
           setAgentNotice("Voice is connected, but the AI participant has not joined this call.");
         } else {
@@ -86,13 +141,37 @@ export function CallScreen({ onBack }: CallScreenProps) {
   }, []);
 
   useEffect(() => {
+    if (!session) return;
+    for (const turn of transcript) {
+      const contentKey = `${turn.speaker}:${turn.content.toLowerCase().replace(/\s+/g, " ").trim()}`;
+      if (
+        !turn.final ||
+        persistedTurnsRef.current.has(turn.key) ||
+        persistedContentRef.current.has(contentKey)
+      ) continue;
+      persistedTurnsRef.current.add(turn.key);
+      persistedContentRef.current.add(contentKey);
+      void apiClient
+        .ingestTranscript(session.session_id, {
+          speaker: turn.speaker,
+          content: turn.content
+        })
+        .catch(() => {
+          persistedTurnsRef.current.delete(turn.key);
+          persistedContentRef.current.delete(contentKey);
+        });
+    }
+  }, [session, transcript]);
+
+  useEffect(() => {
     if (!session || callState === "Call ended") return;
     const checkHandoff = async () => {
       try {
         const status = await apiClient.getVoiceSessionStatus(session.session_id);
-        if (status.escalated && status.poc_name && !handoffSeenRef.current) {
+        setEscalated(status.escalated);
+        if (status.escalated && !handoffSeenRef.current) {
           handoffSeenRef.current = true;
-          setHandoffName(status.poc_name);
+          setHandoffName(status.poc_name ?? "the placement support team");
           window.setTimeout(() => setHandoffName(null), 4500);
         }
       } catch {
@@ -105,12 +184,39 @@ export function CallScreen({ onBack }: CallScreenProps) {
   }, [session]);
 
   useEffect(() => {
+    if (!session || resourceRecommendation || !resourceRequestDetected) return;
+    const checkRecommendation = async () => {
+      try {
+        setResourceRecommendation(
+          await apiClient.getResourceRecommendation(session.session_id)
+        );
+      } catch {
+        try {
+          setResourceRecommendation(
+            await apiClient.ensureResourceRecommendation(session.session_id)
+          );
+        } catch {
+          // The student may not have requested a resource yet.
+        }
+      }
+    };
+    void checkRecommendation();
+  }, [
+    session,
+    resourceRecommendation,
+    resourceRequestDetected,
+    transcript.length,
+    caseCard.recommended_resource,
+  ]);
+
+  useEffect(() => {
     if (!session || callState === "Call ended") return;
 
     const checkCaseCard = async () => {
       try {
         const ticket = await apiClient.getTicket(session.ticket_id);
         const current = ticket.case_card ?? {};
+        setCaseCard(current);
         const previous = previousCaseCardRef.current;
         const changedKeys = Object.keys(current).filter(
           (key) =>
@@ -181,6 +287,38 @@ export function CallScreen({ onBack }: CallScreenProps) {
     setEnding(false);
   }
 
+  async function copyLink(link: string) {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiedLink(link);
+      window.setTimeout(() => setCopiedLink((current) => current === link ? null : current), 1800);
+    } catch {
+      setStartError("Could not copy the link. You can still open it and copy it from the browser.");
+    }
+  }
+
+  async function requestCourseLink(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const topic = linkTopic.trim();
+    if (!session || !topic || linkRequestBusy) return;
+    setLinkRequestBusy(true);
+    setLinkRequestError(null);
+    try {
+      await apiClient.ingestTranscript(session.session_id, {
+        speaker: "student",
+        content: `I want a ${topic} course resource. Please attach the link.`,
+      });
+      setResourceRecommendation(
+        await apiClient.ensureResourceRecommendation(session.session_id)
+      );
+      setLinkTopic("");
+    } catch {
+      setLinkRequestError("Try DSA, system design, web development, DBMS, or operating systems.");
+    } finally {
+      setLinkRequestBusy(false);
+    }
+  }
+
   const visibleState = session
     ? doneSpeaking && callState !== "Call ended"
       ? "Waiting for reply"
@@ -188,6 +326,12 @@ export function CallScreen({ onBack }: CallScreenProps) {
     : startError
       ? "Call ended"
       : "Connecting";
+
+  const sharedLinks = Array.from(new Set([
+    ...(resourceRecommendation ? [resourceRecommendation.resource.url] : []),
+    ...Object.values(caseCard).filter(isWebLink),
+    ...transcript.flatMap((turn) => linksInText(turn.content)),
+  ]));
 
   return (
     <main className="call-screen">
@@ -200,7 +344,16 @@ export function CallScreen({ onBack }: CallScreenProps) {
         {handoffName ? (
           <div className="handoff-notice" role="status">
             <span>Human support</span>
-            <strong>Connecting you to {handoffName}</strong>
+            <strong>Your urgent case is queued for {handoffName}</strong>
+          </div>
+        ) : null}
+        {caseCard.time_sensitive === true || escalated ? (
+          <div className="urgent-support-card" role="status">
+            <strong>This placement issue is marked urgent.</strong>
+            <span>Tap below to open your phone dialler. The call starts only after you confirm it.</span>
+            <a className="urgent-call-action" href={`tel:${URGENT_SUPPORT_PHONE}`}>
+              Call support now · {URGENT_SUPPORT_PHONE}
+            </a>
           </div>
         ) : null}
         <Waveform
@@ -223,6 +376,101 @@ export function CallScreen({ onBack }: CallScreenProps) {
           <p className="call-screen__error" role="alert">{startError ?? agoraError}</p>
         ) : null}
         {agentNotice ? <p className="call-screen__notice" role="status">{agentNotice}</p> : null}
+      </section>
+
+      <section className="call-screen__details" aria-label="Conversation details">
+        <article className="live-case-card">
+          <p className="section-kicker">Live case card</p>
+          <h2>What I know so far</h2>
+          {Object.entries(caseCard).filter(([key, value]) =>
+            !hiddenCaseFields.has(key) && isPopulated(value)
+          ).length ? (
+            <dl>
+              {Object.entries(caseCard)
+                .filter(([key, value]) => !hiddenCaseFields.has(key) && isPopulated(value))
+                .map(([key, value]) => (
+                  <div key={key}>
+                    <dt>{readableLabel(key)}</dt>
+                    <dd>
+                      {isWebLink(value) ? (
+                        <span className="case-card-link">
+                          <a href={value} target="_blank" rel="noreferrer">Open course</a>
+                          <button type="button" onClick={() => void copyLink(value)}>
+                            {copiedLink === value ? "Copied" : "Copy link"}
+                          </button>
+                        </span>
+                      ) : readableValue(value)}
+                    </dd>
+                  </div>
+                ))}
+            </dl>
+          ) : <p className="empty-detail">Listening for useful details…</p>}
+        </article>
+
+        <article className="shared-links-card">
+          <p className="section-kicker">From your conversation</p>
+          <h2>Links shared</h2>
+          {sharedLinks.length ? (
+            <div className="shared-links-list" aria-live="polite">
+              {sharedLinks.map((link, index) => (
+                <div className="shared-link" key={link}>
+                  <div>
+                    <strong>{resourceRecommendation?.resource.title ?? (caseCard.recommended_resource ? readableValue(caseCard.recommended_resource) : `Shared link ${index + 1}`)}</strong>
+                    <span>{new URL(link).hostname.replace(/^www\./, "")}</span>
+                  </div>
+                  <a href={link} target="_blank" rel="noreferrer">Open</a>
+                  <button type="button" onClick={() => void copyLink(link)}>
+                    {copiedLink === link ? "Copied" : "Copy"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="link-request-empty">
+              <p className="empty-detail">Course and resource links from the AI will appear here automatically.</p>
+              <form className="link-topic-form" onSubmit={requestCourseLink}>
+                <label htmlFor="link-topic">Voice request missed? Enter only the course topic.</label>
+                <div>
+                  <input
+                    id="link-topic"
+                    value={linkTopic}
+                    onChange={(event) => setLinkTopic(event.target.value)}
+                    placeholder="e.g. system design"
+                    maxLength={80}
+                  />
+                  <button type="submit" disabled={!session || !linkTopic.trim() || linkRequestBusy}>
+                    {linkRequestBusy ? "Finding…" : "Get link"}
+                  </button>
+                </div>
+                {linkRequestError ? <p role="alert">{linkRequestError}</p> : null}
+              </form>
+            </div>
+          )}
+        </article>
+
+        <article className="voice-history voice-history--sessions">
+          <p className="section-kicker">Previous chats</p>
+          <h2>Conversation history</h2>
+          <div className="session-history">
+            {earlierSessions.map((history) => (
+              <details className="session-history__item" key={history.session_id}>
+                <summary>
+                  <span>{sessionTitle(history)}</span>
+                  <time>{sessionDate(history.started_at)}</time>
+                </summary>
+                <div className="session-history__turns">
+                  {history.turns.map((turn) => (
+                    <p key={turn.id}>
+                      <strong>{turn.speaker === "student" ? "You" : "Margdarshak"}:</strong>{" "}
+                      {turn.content}
+                    </p>
+                  ))}
+                </div>
+              </details>
+            ))}
+            {!earlierSessions.length ? <p className="empty-detail">No previous conversations yet.</p> : null}
+          </div>
+        </article>
       </section>
 
       <footer className="call-screen__controls">

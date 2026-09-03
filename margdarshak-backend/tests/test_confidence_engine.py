@@ -29,4 +29,5 @@ def test_incomplete_policy_lookup_scores_below_threshold() -> None:
 def test_time_sensitive_grievance_patterns() -> None:
     assert is_time_sensitive_grievance("The application link is not working")
     assert is_time_sensitive_grievance("Our placement portal is down")
+    assert is_time_sensitive_grievance("This is urgent, I can't apply right now")
     assert not is_time_sensitive_grievance("I have a general interview concern")

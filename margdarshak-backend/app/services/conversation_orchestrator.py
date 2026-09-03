@@ -10,7 +10,7 @@ from app.db.redis import get_redis_client
 from app.db.readonly_gateway import query_drive_policy
 from app.db.session_factory import get_session_factory
 from app.models.call_session import CallFlowType, CallSession
-from app.models.transcript import TranscriptSpeaker
+from app.models.transcript import Transcript, TranscriptSpeaker
 from app.services.case_card_service import update_case_card
 from app.services.confidence_engine import (
     CONFIDENCE_THRESHOLD,
@@ -40,6 +40,11 @@ UUID_PATTERN = re.compile(
 RESOURCE_INTENT_PATTERN = re.compile(
     r"\b(resource|course|tutorial|learn|study|recommend|dsa|dbms|database|"
     r"operating system|system design|web development|frontend)\b",
+    re.IGNORECASE,
+)
+PLACEMENT_INTENT_PATTERN = re.compile(
+    r"\b(placement|drive|company|interview|job|application|apply|portal|assessment|"
+    r"deadline|tcs|amazon|infosys|wipro)\b",
     re.IGNORECASE,
 )
 
@@ -95,6 +100,21 @@ async def _set_call_flow(session_id: uuid.UUID, flow_type: CallFlowType) -> None
             call_session.flow_type = flow_type
 
 
+async def _student_transcript_for_session(session_id: uuid.UUID) -> str:
+    async with get_session_factory()() as db:
+        turns = (
+            await db.scalars(
+                select(Transcript.content)
+                .where(
+                    Transcript.call_session_id == session_id,
+                    Transcript.speaker == TranscriptSpeaker.STUDENT,
+                )
+                .order_by(Transcript.turn_index)
+            )
+        ).all()
+    return " ".join(turns)
+
+
 async def handle_conversation_turn(
     session_id: uuid.UUID | str, transcript_chunk: str
 ) -> dict[str, Any]:
@@ -105,6 +125,31 @@ async def handle_conversation_turn(
         raise ValueError("transcript_chunk must not be empty")
     state = await _load_state(session_id)
     flow_type = state.get("flow_type", "undetermined")
+    prior_placement_context = PLACEMENT_INTENT_PATTERN.search(
+        str(state.get("issue_summary", ""))
+    )
+    if (
+        flow_type == "resource_diagnostic"
+        and not RESOURCE_INTENT_PATTERN.search(chunk)
+        and (PLACEMENT_INTENT_PATTERN.search(chunk) or prior_placement_context)
+    ):
+        flow_type = "triage"
+        state["flow_type"] = flow_type
+        await _save_state(session_id, state)
+        await _set_call_flow(uuid.UUID(str(session_id)), CallFlowType.TRIAGE)
+    # A greeting or other ambiguous first turn must not permanently lock the
+    # session out of course discovery when the student clarifies their intent.
+    if (
+        flow_type == "triage"
+        and RESOURCE_INTENT_PATTERN.search(chunk)
+        and not PLACEMENT_INTENT_PATTERN.search(chunk)
+    ):
+        flow_type = "resource_diagnostic"
+        state["flow_type"] = flow_type
+        await _save_state(session_id, state)
+        await _set_call_flow(
+            uuid.UUID(str(session_id)), CallFlowType.RESOURCE_DIAGNOSTIC
+        )
     if flow_type == "undetermined":
         # TODO: Replace this keyword router with a structured intent classifier.
         flow_type = (
@@ -178,9 +223,26 @@ async def handle_triage_turn(
     action["issue_summary"] = state["issue_summary"]
     action["drive_id"] = state.get("drive_id")
     confidence = score_confidence(action)
-    urgent = (
-        action["classification"] == "grievance"
-        and is_time_sensitive_grievance(chunk)
+    placement_context = bool(
+        re.search(
+            r"\b(placement|drive|company|interview|job|application|portal)\b",
+            state["issue_summary"],
+            re.IGNORECASE,
+        )
+    )
+    urgency_confirmation = bool(
+        re.fullmatch(
+            r"\s*(yes|yeah|yep|yes it is|it is|it is urgent|urgent)\s*[.!]?\s*",
+            chunk,
+            re.IGNORECASE,
+        )
+    )
+    full_student_transcript = await _student_transcript_for_session(
+        normalized_session_id
+    )
+    urgent = placement_context and (
+        is_time_sensitive_grievance(full_student_transcript)
+        or urgency_confirmation
     )
     action["confidence_score"] = confidence
     action["time_sensitive"] = urgent
@@ -193,6 +255,7 @@ async def handle_triage_turn(
     await update_case_card(
         ticket_id,
         {
+            "request_type": "placement_support",
             "classification": action["classification"],
             "issue_summary": state["issue_summary"],
             "drive_id": state.get("drive_id"),

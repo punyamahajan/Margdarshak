@@ -58,6 +58,21 @@ def generate_icebreaker(
     )
 
 
+def generate_demo_reply(content: str) -> str:
+    """Return a transparent, deterministic reply for a one-person demo bridge."""
+
+    normalized = " ".join(content.lower().split())
+    if normalized in {"hi", "hello", "hey", "hii", "hiii"}:
+        return "Hi! I’m the demo match. What are you preparing for right now?"
+    if any(word in normalized for word in ("interview", "placement", "job")):
+        return "I’m practicing for placements too. Which interview topic feels hardest?"
+    if any(word in normalized for word in ("python", "backend", "fastapi")):
+        return "Nice—I’m exploring backend work too. Are you building a project or preparing interview questions?"
+    if "?" in content:
+        return "That’s a good question. In this demo I’d start by comparing our approach—what have you tried so far?"
+    return "That sounds useful. What part would you most like to compare notes on?"
+
+
 async def _get_active_bridge(bridge_id: uuid.UUID) -> ChatBridge:
     async with get_session_factory()() as db:
         bridge = await db.get(ChatBridge, bridge_id)

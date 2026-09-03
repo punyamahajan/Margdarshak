@@ -57,7 +57,12 @@ def test_start_agent_uses_published_pipeline(monkeypatch: pytest.MonkeyPatch) ->
     body = request["json"]
     assert isinstance(body, dict)
     assert body["pipeline_id"] == "published-pipeline-id"
-    assert body["properties"] == {
+    properties = body["properties"]
+    assert isinstance(properties, dict)
+    assert {key: properties[key] for key in (
+        "channel", "token", "agent_rtc_uid", "remote_rtc_uids",
+        "enable_string_uid", "idle_timeout",
+    )} == {
         "channel": "test-channel",
         "token": "agent-token",
         "agent_rtc_uid": "1",
@@ -65,3 +70,6 @@ def test_start_agent_uses_published_pipeline(monkeypatch: pytest.MonkeyPatch) ->
         "enable_string_uid": False,
         "idle_timeout": 120,
     }
+    assert properties["advanced_features"] == {"enable_rtm": True}
+    assert properties["parameters"]["data_channel"] == "rtm"
+    assert "Never ask for facts already present" in properties["llm"]["system_messages"][0]["content"]

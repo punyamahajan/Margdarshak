@@ -6,7 +6,12 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from app.db.session_factory import get_session_factory
 from app.models.chat_bridge import BridgeStatus, ChatBridge
-from app.services.matchmaker_service import MatchmakerError, add_message, get_messages
+from app.services.matchmaker_service import (
+    MatchmakerError,
+    add_message,
+    generate_demo_reply,
+    get_messages,
+)
 
 router = APIRouter()
 
@@ -47,6 +52,8 @@ def _public_message(message: dict[str, Any], viewer_id: uuid.UUID) -> dict[str, 
     sender_id = message.get("sender_id")
     if sender_id == "system":
         sender = "system"
+    elif sender_id == "demo":
+        sender = "demo"
     elif sender_id == str(viewer_id):
         sender = "self"
     else:
@@ -107,6 +114,13 @@ async def matchmaker_chat(
                 await websocket.close(code=1008, reason=str(exc))
                 return
             await manager.broadcast(bridge_id, message)
+            # Seeded demo peers are not real connected users. When only one
+            # participant is online, provide an explicitly labelled demo reply.
+            if len(manager.connections.get(bridge_id, {})) == 1:
+                demo_message = await add_message(
+                    bridge_id, "demo", generate_demo_reply(content)
+                )
+                await manager.broadcast(bridge_id, demo_message)
     except WebSocketDisconnect:
         pass
     finally:

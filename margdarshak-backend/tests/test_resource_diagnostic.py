@@ -43,6 +43,75 @@ def test_extract_criteria_returns_stable_shape_and_ignores_agent_prompts() -> No
     }
 
 
+def test_extract_criteria_handles_common_voice_transcription_variants() -> None:
+    result = extract_criteria(
+        [
+            {"speaker": "student", "content": "development"},
+            {"speaker": "student", "content": "shortcut"},
+        ]
+    )
+
+    assert result["skill"] == "web_dev"
+    assert result["pacing"] == "short"
+
+
+def test_explicit_link_request_uses_defaults_and_recommends(monkeypatch) -> None:
+    session_id = uuid.uuid4()
+    student_id = uuid.uuid4()
+    ticket_id = uuid.uuid4()
+    redis = FakeRedis()
+    captured_criteria = None
+
+    async def fake_append_turn(*_args):
+        return None
+
+    async def fake_recommend(_student_id, _session_id, criteria):
+        nonlocal captured_criteria
+        captured_criteria = dict(criteria)
+        return Resource(
+            id=uuid.uuid4(),
+            skill_tag="web_dev",
+            format=ResourceFormat.SHEET,
+            pacing=ResourcePacing.SHORT,
+            price_tier=ResourcePriceTier.FREE,
+            url="https://example.invalid/web",
+            title="Web resource",
+        )
+
+    async def fake_update_case_card(*_args):
+        return None
+
+    async def fake_student_id_for_session(_session_id):
+        return student_id
+
+    async def fake_ticket_id_for_session(_session_id):
+        return ticket_id
+
+    monkeypatch.setattr(orchestrator, "get_redis_client", lambda: redis)
+    monkeypatch.setattr(orchestrator, "append_turn", fake_append_turn)
+    monkeypatch.setattr(orchestrator, "recommend", fake_recommend)
+    monkeypatch.setattr(
+        orchestrator, "_student_id_for_session", fake_student_id_for_session
+    )
+    monkeypatch.setattr(
+        orchestrator, "_ticket_id_for_session", fake_ticket_id_for_session
+    )
+    monkeypatch.setattr(orchestrator, "update_case_card", fake_update_case_card)
+
+    result = asyncio.run(
+        orchestrator.handle_resource_turn(
+            session_id, "development, please place the link in the box"
+        )
+    )
+    assert result["complete"] is True
+    assert captured_criteria == {
+        "skill": "web_dev",
+        "pacing": "short",
+        "format": "sheet",
+        "budget": "free",
+    }
+
+
 def test_resource_flow_asks_in_order_then_recommends(monkeypatch) -> None:
     session_id = uuid.uuid4()
     redis = FakeRedis()
@@ -76,12 +145,26 @@ def test_resource_flow_asks_in_order_then_recommends(monkeypatch) -> None:
         assert requested_session_id == session_id
         return student_id
 
+    ticket_id = uuid.uuid4()
+
+    async def fake_ticket_id_for_session(requested_session_id):
+        assert requested_session_id == session_id
+        return ticket_id
+
+    async def fake_update_case_card(requested_ticket_id, fields):
+        assert requested_ticket_id == ticket_id
+        assert fields
+
     monkeypatch.setattr(orchestrator, "get_redis_client", lambda: redis)
     monkeypatch.setattr(orchestrator, "append_turn", fake_append_turn)
     monkeypatch.setattr(orchestrator, "recommend", fake_recommend)
     monkeypatch.setattr(
         orchestrator, "_student_id_for_session", fake_student_id_for_session
     )
+    monkeypatch.setattr(
+        orchestrator, "_ticket_id_for_session", fake_ticket_id_for_session
+    )
+    monkeypatch.setattr(orchestrator, "update_case_card", fake_update_case_card)
 
     first = asyncio.run(
         orchestrator.handle_resource_turn(session_id, "I want System Design")
