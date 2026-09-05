@@ -1,5 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Home } from "./screens/Home";
+import { PlacementDetails } from "./screens/PlacementDetails";
+import { studentPlacements } from "./data/studentData";
 
 const CallScreen = lazy(() =>
   import("./screens/CallScreen").then((module) => ({ default: module.CallScreen }))
@@ -60,10 +62,19 @@ export default function App() {
     );
   }
 
+  const placementMatch = route.match(/^\/placements\/([^/]+)$/);
+  if (placementMatch) {
+    const placement = studentPlacements.find((item) => item.id === decodeURIComponent(placementMatch[1]));
+    if (placement) {
+      return <PlacementDetails placement={placement} onBack={() => navigate("/")} onAsk={() => navigate("/call")} />;
+    }
+  }
+
   return (
     <Home
       onStartCall={() => navigate("/call")}
       onFindMatch={() => navigate("/matchmaker")}
+      onOpenPlacement={(id) => navigate(`/placements/${id}`)}
     />
   );
 }
