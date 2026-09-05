@@ -9,6 +9,8 @@ from app.api.v1.routes_resources import router as resources_router
 from app.api.v1.routes_dashboard import router as dashboard_router
 from app.api.v1.routes_tickets import router as tickets_router
 from app.api.v1.routes_voice import router as voice_router
+from app.api.v1.routes_admin import router as admin_router, knowledge_router, stats_router
+from app.api.v1.routes_students import router as students_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.websockets.connection_manager import router as websocket_router
@@ -35,8 +37,8 @@ app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type"],
+    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 app.include_router(voice_router, prefix="/api/v1")
@@ -44,6 +46,10 @@ app.include_router(tickets_router, prefix="/api/v1")
 app.include_router(matchmaker_router, prefix="/api/v1")
 app.include_router(resources_router, prefix="/api/v1")
 app.include_router(dashboard_router, prefix="/api/v1")
+app.include_router(admin_router, prefix="/api/v1")
+app.include_router(knowledge_router, prefix="/api/v1")
+app.include_router(stats_router, prefix="/api/v1")
+app.include_router(students_router, prefix="/api/v1")
 app.include_router(websocket_router)
 
 

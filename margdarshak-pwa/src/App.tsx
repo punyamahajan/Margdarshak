@@ -10,6 +10,7 @@ const MatchmakerRequest = lazy(() =>
 const MatchmakerChat = lazy(() =>
   import("./screens/MatchmakerChat").then((module) => ({ default: module.MatchmakerChat }))
 );
+const AdminWorkspace = lazy(() => import("./screens/AdminWorkspaceComplete").then((module) => ({ default: module.AdminWorkspaceComplete })));
 
 function routeFromLocation(): string {
   return window.location.pathname;
@@ -46,6 +47,10 @@ export default function App() {
         />
       </Suspense>
     );
+  }
+
+  if (route === "/admin") {
+    return <Suspense fallback={<main className="route-loading">Opening coordinator workspace…</main>}><AdminWorkspace onExit={() => navigate("/")} /></Suspense>;
   }
 
   const bridgeMatch = route.match(/^\/matchmaker\/([^/]+)$/);

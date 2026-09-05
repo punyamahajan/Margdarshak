@@ -11,6 +11,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     ...options,
     headers: {
       "Content-Type": "application/json",
+      ...(path.startsWith("/admin") ? { Authorization: `Bearer ${import.meta.env.VITE_ADMIN_API_KEY ?? "local-admin-demo"}` } : {}),
       ...options.headers
     },
     body: options.body === undefined ? undefined : JSON.stringify(options.body)
@@ -21,6 +22,14 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     throw new Error(`Margdarshak API ${response.status}: ${detail}`);
   }
 
+  return response.json() as Promise<T>;
+}
+
+async function upload<T>(path: string, file: File): Promise<T> {
+  const form = new FormData();
+  form.append("file", file);
+  const response = await fetch(`${API_BASE_URL}${path}`, { method: "POST", body: form, headers: { Authorization: `Bearer ${import.meta.env.VITE_ADMIN_API_KEY ?? "local-admin-demo"}` } });
+  if (!response.ok) throw new Error(`Margdarshak API ${response.status}: ${await response.text()}`);
   return response.json() as Promise<T>;
 }
 
@@ -96,6 +105,17 @@ export type ConsentResult = {
   rtc_tokens?: string[];
 };
 
+export type AdminTicket = {
+  id: string; status: "open" | "claimed" | "waiting" | "escalated" | "resolved"; issue_summary: string; confidence_score: number; created_at: string; updated_at: string;
+  student: { name: string; enrollment_number: string; email: string };
+  placement: { company: string | null; drive_id: string | null; role: string | null; round: string | null; deadline: string | null };
+  intelligence: { urgency: "low" | "medium" | "high" | "critical"; language: string; category: string; assigned_coordinator: string | null; cluster_id: string | null };
+  original_request: string | null; conversation_summary: string | null; source: string | null;
+};
+export type AdminOverview = { metrics: Record<AdminTicket["status"], number>; priority_tickets: AdminTicket[]; active_drives: Array<{ id: string; company: string; status: string; policy: string }>; recent_updates: Array<{ kind: string; text: string; at: string }> };
+export type AdminCluster = { id: string; title: string; company_name: string | null; urgency: "low" | "medium" | "high" | "critical"; priority_score: number; status: string; affected_students: number; incident_update: string | null; response_draft: string | null; created_at: string };
+export type AdminKnowledge = { id: string; title: string; type: string; company: string | null; version: string; status: "draft" | "published" | "expired"; source: string; content: Record<string, unknown>; created_at: string };
+
 export function createMatchmakerSocket(bridgeId: string, studentId: string): WebSocket {
   const endpoint = new URL(API_BASE_URL);
   endpoint.protocol = endpoint.protocol === "https:" ? "wss:" : "ws:";
@@ -106,6 +126,21 @@ export function createMatchmakerSocket(bridgeId: string, studentId: string): Web
 }
 
 export const apiClient = {
+  adminOverview() { return request<AdminOverview>("/admin/overview"); },
+  adminTickets(filters: Record<string, string | undefined> = {}) { const query = new URLSearchParams(Object.entries(filters).filter((entry): entry is [string, string] => Boolean(entry[1]))).toString(); return request<AdminTicket[]>(`/admin/tickets${query ? `?${query}` : ""}`); },
+  updateAdminTicket(id: string, body: { status?: string; assigned_coordinator?: string; urgency?: string; language?: string; category?: string; original_request?: string; conversation_summary?: string; cluster_id?: string | null }) { return request(`/admin/tickets/${encodeURIComponent(id)}`, { method: "PATCH", body }); },
+  adminStats() { return request<{ total_conversations: number; tickets_created: number; tickets_resolved: number; students_assisted: number; active_clusters: number; average_resolution_time_hours: number; most_common_issue_categories: Record<string, number>; most_requested_companies: Record<string, number>; most_common_languages: Record<string, number> }>("/admin/stats"); },
+  adminClusters() { return request<AdminCluster[]>("/admin/clusters"); },
+  createAdminCluster(body: { title: string; company_name?: string; urgency: string }) { return request<{ id: string }>("/admin/clusters", { method: "POST", body }); },
+  startAdminAgoraSession() { return request<{ app_id: string; channel_name: string; uid: number; rtc_token: string }>("/admin/agora/session", { method: "POST" }); },
+  draftCluster(id: string, notes: string) { return request<{ draft: string }>(`/admin/clusters/${encodeURIComponent(id)}/draft-response`, { method: "POST", body: { notes } }); },
+  publishCluster(id: string, message: string) { return request(`/admin/clusters/${encodeURIComponent(id)}/publish-update`, { method: "POST", body: { message } }); },
+  resolveCluster(id: string) { return request(`/admin/clusters/${encodeURIComponent(id)}/resolve`, { method: "POST" }); },
+  adminKnowledge() { return request<AdminKnowledge[]>("/admin/knowledge"); },
+  createKnowledge(body: { title: string; document_type: string; version_label: string; source_reference: string; company_name?: string; content?: Record<string, unknown> }) { return request("/admin/knowledge", { method: "POST", body }); },
+  updateKnowledge(id: string, status: string) { return request(`/admin/knowledge/${encodeURIComponent(id)}?status=${encodeURIComponent(status)}`, { method: "PATCH" }); },
+  previewShortlist(file: File) { return upload<{ valid: boolean; record_count: number; preview: Array<Record<string, string>>; rows: Array<Record<string, string>> }>("/admin/knowledge/shortlist-preview", file); },
+  importShortlist(body: { title: string; source_reference: string; version_label: string; rows: Array<Record<string, string>> }) { return request("/admin/knowledge/shortlist-import", { method: "POST", body }); },
   startVoiceSession(studentId: string) {
     const uidValues = new Uint32Array(1);
     crypto.getRandomValues(uidValues);

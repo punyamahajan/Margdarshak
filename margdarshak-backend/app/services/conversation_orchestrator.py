@@ -12,6 +12,8 @@ from app.db.session_factory import get_session_factory
 from app.models.call_session import CallFlowType, CallSession
 from app.models.transcript import Transcript, TranscriptSpeaker
 from app.services.case_card_service import update_case_card
+from app.services.admin_workflow_service import sync_ticket_workflow
+from app.services.knowledge_service import retrieve_approved_knowledge
 from app.services.confidence_engine import (
     CONFIDENCE_THRESHOLD,
     is_time_sensitive_grievance,
@@ -213,12 +215,13 @@ async def handle_triage_turn(
             }
     else:
         state["classification"] = "grievance"
-        # TODO(next chunk): persist/escalate a ticket and build its case card.
-        action = {
-            "next_action": "escalate_grievance",
-            "classification": "grievance",
-            "message": "The grievance is ready for escalation handling.",
-        }
+        async with get_session_factory()() as knowledge_db:
+            approved = await retrieve_approved_knowledge(knowledge_db, state["issue_summary"])
+        resolved = next((item for item in approved if item["type"] == "resolved_issue"), None)
+        if resolved:
+            action = {"next_action": "answer_from_resolved_issue", "classification": "grievance", "message": str(resolved["content"].get("response") or resolved["content"].get("resolution") or "This issue has already been resolved."), "source": resolved}
+        else:
+            action = {"next_action": "escalate_grievance", "classification": "grievance", "message": "The grievance is ready for escalation handling."}
 
     action["issue_summary"] = state["issue_summary"]
     action["drive_id"] = state.get("drive_id")
@@ -265,11 +268,13 @@ async def handle_triage_turn(
             "policy": action.get("policy"),
         },
     )
+    await sync_ticket_workflow(ticket_id, state["issue_summary"], confidence, urgent, action["next_action"] == "answer_from_resolved_issue")
 
     escalation_reasons: list[str] = []
-    if confidence < CONFIDENCE_THRESHOLD:
+    knowledge_resolved = action["next_action"] == "answer_from_resolved_issue"
+    if confidence < CONFIDENCE_THRESHOLD and not knowledge_resolved:
         escalation_reasons.append("low_confidence")
-    if urgent:
+    if urgent and not knowledge_resolved:
         escalation_reasons.append("time_sensitive_grievance")
 
     if escalation_reasons:

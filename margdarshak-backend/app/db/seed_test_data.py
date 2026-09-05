@@ -14,6 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session_factory import get_session_factory
 from app.models.placement_drive import PlacementDrive
 from app.models.student import Student
+from app.models.ticket import Ticket, TicketStatus
+from app.models.admin import KnowledgeDocument, StudentNotification, TicketCluster, TicketWorkflow
 
 
 PLACEMENT_DRIVES: tuple[dict[str, str], ...] = (
@@ -132,11 +134,37 @@ async def seed_test_data(session: AsyncSession) -> dict[str, int]:
 
     session.add_all([*new_drives, *new_students])
     await session.commit()
+    # Coordinator demo data makes the complete admin workflow usable locally
+    # without requiring a live Agora call to create its first ticket.
+    students = {item.roll_number: item for item in (await session.scalars(select(Student))).all()}
+    drives = {item.company_name: item for item in (await session.scalars(select(PlacementDrive))).all()}
+    existing_tickets = (await session.scalars(select(Ticket))).all()
+    inserted_tickets = 0
+    if not existing_tickets:
+        cluster = TicketCluster(title="Assessment link issue", company_name="Riverbank Fintech Labs", drive_id=drives["Riverbank Fintech Labs"].id, urgency="critical", status="open", incident_update="The Riverbank assessment link is being verified with the company.")
+        session.add(cluster); await session.flush()
+        demo_cases = (
+            ("230611", "Riverbank Fintech Labs", "Assessment link is not working.", "escalated", "high", "Hindi", "Technical / Assessment", cluster.id),
+            ("230622", "Riverbank Fintech Labs", "The assessment page shows an access error.", "open", "high", "English", "Technical / Assessment", cluster.id),
+            ("230633", "Acme Cloud Systems", "Can I confirm my eligibility for the online assessment?", "claimed", "medium", "English", "Eligibility", None),
+            ("230644", "Northstar Analytics", "I need the updated interview schedule.", "waiting", "medium", "English", "Interview", None),
+            ("230611", "Acme Cloud Systems", "The corrected application URL was shared.", "resolved", "low", "English", "Application", None),
+        )
+        for roll, company, summary, status, urgency, language, category, cluster_id in demo_cases:
+            student = students[roll]
+            ticket = Ticket(student_id=student.id, drive_id=drives[company].id, issue_summary=summary, transcript_ref=f"demo-{roll}", confidence_score=0.94, status=TicketStatus.ESCALATED if status == "escalated" else TicketStatus.OPEN, escalated_to="demo-placement-support-desk" if status == "escalated" else "", roll_number_snapshot=roll)
+            session.add(ticket); await session.flush()
+            session.add(TicketWorkflow(ticket_id=ticket.id, status=status, assigned_coordinator="Priya Coordinator" if status == "claimed" else None, urgency=urgency, language=language, category=category, original_request=summary, conversation_summary=f"Student needs verified guidance regarding {company}.", cluster_id=cluster_id))
+            inserted_tickets += 1
+        session.add(KnowledgeDocument(title="Riverbank Fintech Labs Approved Placement Notice", document_type="placement_policy", company_name="Riverbank Fintech Labs", drive_id=drives["Riverbank Fintech Labs"].id, version_label="2026.1", status="published", source_reference="manual://demo-approved-riverbank", content={"eligibility": "Final-year CSE/IT students; no active backlogs", "deadline": "2026-09-11", "instructions": "Use the approved placement portal link."}))
+        session.add(KnowledgeDocument(title="Resolved issue: Riverbank assessment link", document_type="resolved_issue", company_name="Riverbank Fintech Labs", version_label="2026.1", status="published", source_reference="coordinator://demo-resolution", content={"resolution": "The company re-issued the assessment link.", "response": "Use the newly shared link from the placement portal."}))
+        await session.commit()
     return {
         "drives_inserted": len(new_drives),
         "drives_existing": len(PLACEMENT_DRIVES) - len(new_drives),
         "students_inserted": len(new_students),
         "students_existing": len(STUDENTS) - len(new_students),
+        "demo_tickets_inserted": inserted_tickets,
     }
 
 

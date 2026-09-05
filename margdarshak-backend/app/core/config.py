@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     app_name: str = "Margdarshak Voice-AI Placement Hotline"
     environment: str = "development"
     log_level: str = "INFO"
+    admin_api_key: SecretStr = SecretStr("local-admin-demo")
 
     database_url: str
     redis_url: str

@@ -10,7 +10,7 @@ The repository contains:
 
 - `margdarshak-backend` — FastAPI, PostgreSQL, Redis, Alembic, Agora RTC, and WebSockets;
 - `margdarshak-pwa` — the student-facing Vite/React PWA;
-- `margdarshak-dashboard` — the Streamlit coordinator dashboard;
+- `margdarshak-dashboard` — legacy Streamlit coordinator dashboard (superseded by the React `/admin` workspace);
 - `margdarshak-test-client` — a minimal standalone Agora debugging client.
 
 ## Prerequisites
@@ -157,26 +157,14 @@ Open <http://127.0.0.1:5173>.
 Use `npm` instead of `npm.cmd` on macOS or Linux. PowerShell may block
 `npm.ps1`; `npm.cmd` avoids changing the execution policy.
 
-### 7. Configure and start the coordinator dashboard — terminal 3
+### 7. Open the coordinator workspace
 
-Create `margdarshak-dashboard/.env`:
-
-```dotenv
-MARGDARSHAK_API_URL=http://127.0.0.1:8000/api/v1
-```
-
-Then run:
-
-```powershell
-cd margdarshak-dashboard
-py -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-streamlit run app.py --server.port 8501
-```
-
-Open <http://localhost:8501>.
+The coordinator experience is part of the React PWA. With the PWA running,
+open <http://127.0.0.1:5173/admin>. It includes Home, Tickets, Stats, and
+Knowledge management. Apply `alembic upgrade head` before using it so the
+coordinator workflow, cluster, and knowledge tables are available. See
+[the admin implementation guide](ADMIN_PANEL_IMPLEMENTATION.md) for its API
+contract and operational behavior.
 
 ## What to put in each `.env` value
 
@@ -292,7 +280,7 @@ npm.cmd run build
 3. Run `seed_resources.py`, then `seed_test_data.py`.
 4. Start FastAPI on port `8000`.
 5. Start the PWA on port `5173`.
-6. Start Streamlit on port `8501` if the coordinator dashboard is needed.
+6. Open `/admin` in the PWA for the coordinator workspace.
 
 ## Current integration limitation
 
