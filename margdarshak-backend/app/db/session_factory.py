@@ -11,7 +11,7 @@ from app.core.config import get_settings
 
 @lru_cache
 def get_engine() -> AsyncEngine:
-    return create_async_engine(get_settings().database_url, pool_pre_ping=True)
+    return create_async_engine(get_settings().database_url, pool_pre_ping=True, connect_args={"statement_cache_size": 0})
 
 
 @lru_cache
