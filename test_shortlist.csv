@@ -1,0 +1,3 @@
+name,enrollment_number,email,company,drive_id,shortlisted,role,round
+John Doe,S12345,john@example.com,TechCorp,D001,True,SDE,1
+Jane Doe,S67890,jane@example.com,TechCorp,D001,True,SDE,1
