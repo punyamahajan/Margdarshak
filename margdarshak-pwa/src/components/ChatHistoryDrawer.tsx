@@ -1,6 +1,7 @@
 import { useEffect, useState, useId } from "react";
 import type { VoiceHistorySession } from "../services/apiClient";
 import { ConversationCard, extractConversationTitle } from "./ConversationCard";
+import { ChatSummaryModal } from "./ChatSummaryModal";
 
 export type ChatHistoryDrawerProps = {
   isOpen: boolean;
@@ -18,6 +19,7 @@ export function ChatHistoryDrawer({
   loading = false,
 }: ChatHistoryDrawerProps) {
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedSession, setSelectedSession] = useState<VoiceHistorySession | null>(null);
   const titleId = useId();
 
   // Close on Escape key press
@@ -150,7 +152,11 @@ export function ChatHistoryDrawer({
           ) : filteredSessions.length ? (
             <div className="chat-history-drawer__list">
               {filteredSessions.map((session) => (
-                <ConversationCard key={session.session_id} session={session} />
+                <ConversationCard
+                  key={session.session_id}
+                  session={session}
+                  onOpenSummary={(s) => setSelectedSession(s)}
+                />
               ))}
             </div>
           ) : (
@@ -170,6 +176,13 @@ export function ChatHistoryDrawer({
           )}
         </div>
       </aside>
+
+      {/* Pop-up Window for Chat Summary & Links */}
+      <ChatSummaryModal
+        isOpen={Boolean(selectedSession)}
+        session={selectedSession}
+        onClose={() => setSelectedSession(null)}
+      />
     </div>
   );
 }

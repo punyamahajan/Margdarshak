@@ -1,15 +1,20 @@
 import { useState, type FormEvent } from "react";
 import { apiClient } from "../services/apiClient";
+import { useAuth } from "../context/AuthContext";
 
 type MatchmakerRequestProps = {
   onBack: () => void;
   onMatched: (bridgeId: string) => void;
 };
 
-const STUDENT_ID = import.meta.env.VITE_STUDENT_ID as string | undefined;
+const DEFAULT_STUDENT_ID = import.meta.env.VITE_STUDENT_ID as string | undefined;
 
 export function MatchmakerRequest({ onBack, onMatched }: MatchmakerRequestProps) {
-  const [tagsText, setTagsText] = useState("");
+  const { student } = useAuth();
+  const activeStudentId = student?.id ?? DEFAULT_STUDENT_ID;
+
+  const defaultTags = student?.tags?.join(", ") || "";
+  const [tagsText, setTagsText] = useState(defaultTags);
   const [responsibility, setResponsibility] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -17,8 +22,8 @@ export function MatchmakerRequest({ onBack, onMatched }: MatchmakerRequestProps)
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const tags = tagsText.split(",").map((tag) => tag.trim()).filter(Boolean);
-    if (!STUDENT_ID) {
-      setStatus("Set VITE_STUDENT_ID to an existing student UUID first.");
+    if (!activeStudentId) {
+      setStatus("Please sign in or set VITE_STUDENT_ID to a student UUID first.");
       return;
     }
     if (!tags.length && !responsibility.trim()) {
@@ -29,7 +34,7 @@ export function MatchmakerRequest({ onBack, onMatched }: MatchmakerRequestProps)
     setSubmitting(true);
     setStatus(null);
     try {
-      const result = await apiClient.requestMatch(STUDENT_ID, tags, responsibility.trim());
+      const result = await apiClient.requestMatch(activeStudentId, tags, responsibility.trim());
       if (result.matched && result.bridge_id) {
         onMatched(result.bridge_id);
       } else {

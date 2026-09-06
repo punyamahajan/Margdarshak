@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { PlacementCard } from "../components/PlacementCard";
 import { ChatHistoryDrawer } from "../components/ChatHistoryDrawer";
-import { demoStudent, placementUpdate, studentPlacements } from "../data/studentData";
+import { useAuth } from "../context/AuthContext";
+import { placementUpdate, studentPlacements } from "../data/studentData";
 import { apiClient, type VoiceHistorySession } from "../services/apiClient";
 
-const STUDENT_ID = import.meta.env.VITE_STUDENT_ID as string | undefined;
+const DEFAULT_STUDENT_ID = import.meta.env.VITE_STUDENT_ID as string | undefined;
 
 type HomeProps = { onStartCall: () => void; onFindMatch: () => void; onOpenPlacement: (id: string) => void };
 
@@ -17,19 +18,26 @@ function ChatIcon() {
 }
 
 export function Home({ onStartCall, onFindMatch, onOpenPlacement }: HomeProps) {
+  const { student, openAuthModal, openProfileModal } = useAuth();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historySessions, setHistorySessions] = useState<VoiceHistorySession[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
+  const activeStudentId = student?.id ?? DEFAULT_STUDENT_ID;
+
   useEffect(() => {
-    if (!STUDENT_ID) return;
+    if (!activeStudentId) return;
     setHistoryLoading(true);
     apiClient
-      .getVoiceHistory(STUDENT_ID)
+      .getVoiceHistory(activeStudentId)
       .then(setHistorySessions)
       .catch(() => undefined)
       .finally(() => setHistoryLoading(false));
-  }, []);
+  }, [activeStudentId]);
+
+  const initials = student?.name
+    ? student.name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase()
+    : "ST";
 
   return (
     <main className="home-screen">
@@ -53,10 +61,38 @@ export function Home({ onStartCall, onFindMatch, onOpenPlacement }: HomeProps) {
               <span className="chat-history-count-badge">{historySessions.length}</span>
             ) : null}
           </button>
-          <div className="student-menu" aria-label="Signed-in student">
-            <span className="student-menu__avatar" aria-hidden="true">AS</span>
-            <span><strong>{demoStudent.name}</strong><small>{demoStudent.university}</small></span>
-          </div>
+          {student ? (
+            <button
+              type="button"
+              className="nav-profile-btn"
+              onClick={openProfileModal}
+              aria-label="Open Student Profile"
+              title={`${student.name} (${student.student_id}) · View & edit subjects`}
+            >
+              <span className="nav-profile-avatar" aria-hidden="true">{initials}</span>
+              <span className="nav-profile-info">
+                <strong className="nav-profile-name">{student.name}</strong>
+                <small className="nav-profile-id">{student.college_name || student.student_id}</small>
+              </span>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" className="nav-profile-chevron" aria-hidden="true">
+                <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="nav-profile-btn nav-profile-btn--guest"
+              onClick={() => openAuthModal("login")}
+              aria-label="Student Sign In or Register"
+            >
+              <span className="nav-profile-avatar nav-profile-avatar--guest" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                </svg>
+              </span>
+              <span>Sign In / Profile</span>
+            </button>
+          )}
         </div>
       </nav>
 

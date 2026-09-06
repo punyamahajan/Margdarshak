@@ -2,24 +2,89 @@ const API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000/api/v1"
 ).replace(/\/$/, "");
 
+export type StudentProfile = {
+  id: string;
+  name: string;
+  email: string;
+  college_name: string;
+  student_id: string;
+  branch: string;
+  phone: string;
+  known_subjects: string[];
+  explore_topics: string[];
+  tags: string[];
+  linkedin_url: string | null;
+  matchmaking_opt_in: boolean;
+};
+
+export type AuthResponse = {
+  access_token: string;
+  token_type: string;
+  student: StudentProfile;
+};
+
+export type SignupPayload = {
+  name: string;
+  email: string;
+  password: string;
+  college_name: string;
+  student_id: string;
+  branch?: string;
+  phone?: string;
+  known_subjects?: string[];
+  explore_topics?: string[];
+  linkedin_url?: string;
+};
+
+export type LoginPayload = {
+  email: string;
+  password: string;
+};
+
+export type UpdateProfilePayload = {
+  name?: string;
+  college_name?: string;
+  branch?: string;
+  known_subjects?: string[];
+  explore_topics?: string[];
+  linkedin_url?: string;
+  phone?: string;
+  matchmaking_opt_in?: boolean;
+};
+
 type RequestOptions = Omit<RequestInit, "body"> & {
   body?: unknown;
 };
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const token = typeof localStorage !== "undefined" ? localStorage.getItem("margdarshak_auth_token") : null;
+  const isAdminPath = path.startsWith("/admin");
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(isAdminPath
+      ? { Authorization: `Bearer ${import.meta.env.VITE_ADMIN_API_KEY ?? "local-admin-demo"}` }
+      : token
+        ? { Authorization: `Bearer ${token}` }
+        : {}),
+  };
+  if (options.headers) {
+    Object.assign(headers, options.headers);
+  }
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(path.startsWith("/admin") ? { Authorization: `Bearer ${import.meta.env.VITE_ADMIN_API_KEY ?? "local-admin-demo"}` } : {}),
-      ...options.headers
-    },
+    headers,
     body: options.body === undefined ? undefined : JSON.stringify(options.body)
   });
 
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`Margdarshak API ${response.status}: ${detail}`);
+    let detail = await response.text();
+    try {
+      const parsed = JSON.parse(detail);
+      if (parsed.detail) {
+        detail = typeof parsed.detail === "string" ? parsed.detail : JSON.stringify(parsed.detail);
+      }
+    } catch {}
+    throw new Error(detail);
   }
 
   return response.json() as Promise<T>;
@@ -70,6 +135,42 @@ export type VoiceHistorySession = {
   session_id: string;
   started_at: string;
   ended_at: string | null;
+  turns: TranscriptTurn[];
+};
+
+export type VoiceSessionSummaryLink = {
+  url: string;
+  title: string;
+  category?: string;
+  format?: string;
+  source?: string;
+  snippet?: string;
+};
+
+export type VoiceSessionSummary = {
+  session_id: string;
+  started_at: string | null;
+  ended_at: string | null;
+  turns_count: number;
+  topic: string;
+  summary: {
+    topic: string;
+    student_query: string;
+    ai_guidance: string;
+    status: string;
+    confidence_score?: number | null;
+    escalated_to?: string | null;
+    case_card?: Record<string, unknown> | null;
+  };
+  links: VoiceSessionSummaryLink[];
+  recommendation?: {
+    title: string;
+    url: string;
+    format: string;
+    pacing: string;
+    price_tier: string;
+    reasoning: string;
+  } | null;
   turns: TranscriptTurn[];
 };
 
@@ -181,6 +282,12 @@ export const apiClient = {
     );
   },
 
+  getVoiceSessionSummary(sessionId: string) {
+    return request<VoiceSessionSummary>(
+      `/voice/session/${encodeURIComponent(sessionId)}/summary`
+    );
+  },
+
   ingestTranscript(
     sessionId: string,
     turn: { speaker: TranscriptTurn["speaker"]; content: string; is_final?: boolean }
@@ -243,5 +350,30 @@ export const apiClient = {
       `/resources/recommendations/${encodeURIComponent(sessionId)}/ensure`,
       { method: "POST" }
     );
+  },
+
+  signup(payload: SignupPayload) {
+    return request<AuthResponse>("/auth/signup", {
+      method: "POST",
+      body: payload
+    });
+  },
+
+  login(payload: LoginPayload) {
+    return request<AuthResponse>("/auth/login", {
+      method: "POST",
+      body: payload
+    });
+  },
+
+  getMyProfile() {
+    return request<StudentProfile>("/auth/me");
+  },
+
+  updateProfile(payload: UpdateProfilePayload) {
+    return request<StudentProfile>("/auth/profile", {
+      method: "PUT",
+      body: payload
+    });
   }
 };

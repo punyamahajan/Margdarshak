@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.v1.routes_auth import router as auth_router
 from app.api.v1.routes_matchmaker import router as matchmaker_router
 from app.api.v1.routes_resources import router as resources_router
 from app.api.v1.routes_dashboard import router as dashboard_router
@@ -37,10 +38,11 @@ app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
-    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )
 
+app.include_router(auth_router, prefix="/api/v1")
 app.include_router(voice_router, prefix="/api/v1")
 app.include_router(tickets_router, prefix="/api/v1")
 app.include_router(matchmaker_router, prefix="/api/v1")

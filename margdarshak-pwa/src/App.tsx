@@ -1,4 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from "react";
+import { AuthProvider } from "./context/AuthContext";
+import { AuthModal } from "./components/AuthModal";
+import { StudentProfileModal } from "./components/StudentProfileModal";
 import { Home } from "./screens/Home";
 import { PlacementDetails } from "./screens/PlacementDetails";
 import { studentPlacements } from "./data/studentData";
@@ -18,7 +21,7 @@ function routeFromLocation(): string {
   return window.location.pathname;
 }
 
-export default function App() {
+function MainRoutes() {
   const [route, setRoute] = useState(routeFromLocation);
 
   useEffect(() => {
@@ -81,5 +84,15 @@ export default function App() {
       onFindMatch={() => navigate("/matchmaker")}
       onOpenPlacement={(id) => navigate(`/placements/${id}`)}
     />
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <MainRoutes />
+      <AuthModal />
+      <StudentProfileModal />
+    </AuthProvider>
   );
 }
