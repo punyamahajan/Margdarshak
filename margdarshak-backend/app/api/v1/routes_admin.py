@@ -172,7 +172,7 @@ async def update_ticket_workflow(ticket_id: uuid.UUID, payload: WorkflowUpdate, 
 
 @router.get("/overview")
 async def overview(db: AsyncSession = Depends(get_db_session)) -> dict[str, Any]:
-    tickets = await list_admin_tickets(db=db)
+    tickets = await list_admin_tickets(db=db, status=None)
     counts = Counter(ticket["status"] for ticket in tickets)
     drives = (await db.scalars(select(PlacementDrive).where(PlacementDrive.status == "active"))).all()
     priority = sorted((ticket for ticket in tickets if ticket["status"] != "resolved"), key=lambda item: ({"critical": 4, "high": 3, "medium": 2, "low": 1}.get(item["intelligence"]["urgency"], 0), item["created_at"]), reverse=True)[:3]
@@ -184,7 +184,7 @@ async def overview(db: AsyncSession = Depends(get_db_session)) -> dict[str, Any]
 
 @router.get("/stats")
 async def admin_stats(db: AsyncSession = Depends(get_db_session)) -> dict[str, Any]:
-    tickets = await list_admin_tickets(db=db)
+    tickets = await list_admin_tickets(db=db, status=None)
     category_counts = Counter(item["intelligence"]["category"] for item in tickets)
     language_counts = Counter(item["intelligence"]["language"] for item in tickets)
     company_counts = Counter(item["placement"]["company"] or "Unassigned" for item in tickets)
