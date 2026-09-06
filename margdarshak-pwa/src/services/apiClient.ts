@@ -84,9 +84,14 @@ export type VoiceSessionStatus = {
 export type TicketWithCaseCard = {
   id: string;
   status: "open" | "escalated" | "resolved";
+  display_status: string;
+  display_status_detail: string;
   issue_summary: string;
   confidence_score: number;
   escalated_to: string;
+  parent_ticket_id: string | null;
+  similar_count: number;
+  created_at: string;
   case_card: Record<string, unknown> | null;
 };
 
@@ -188,6 +193,14 @@ export const apiClient = {
 
   getTicket(ticketId: string) {
     return request<TicketWithCaseCard>(`/tickets/${encodeURIComponent(ticketId)}`);
+  },
+
+  listTickets(params?: { studentId?: string; status?: TicketWithCaseCard["status"] }) {
+    const query = new URLSearchParams();
+    if (params?.studentId) query.set("student_id", params.studentId);
+    if (params?.status) query.set("status", params.status);
+    const suffix = query.size ? `?${query.toString()}` : "";
+    return request<TicketWithCaseCard[]>(`/tickets${suffix}`);
   },
 
   requestMatch(studentId: string, tags: string[], campusResponsibility?: string) {

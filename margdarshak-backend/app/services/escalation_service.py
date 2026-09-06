@@ -91,7 +91,10 @@ async def trigger_escalation(
 
             summary = await format_case_summary(case_card, session_id)
             handover = await handover_to_human(
-                call_session.agora_channel_id, poc_contact, summary
+                call_session.agora_channel_id,
+                poc_contact,
+                summary,
+                agent_id=call_session.agora_agent_id,
             )
 
             # No human-handoff enum exists; this remains a triage flow.

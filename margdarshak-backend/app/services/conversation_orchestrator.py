@@ -10,16 +10,14 @@ from app.db.redis import get_redis_client
 from app.db.readonly_gateway import query_drive_policy
 from app.db.session_factory import get_session_factory
 from app.models.call_session import CallFlowType, CallSession
-from app.models.transcript import Transcript, TranscriptSpeaker
+from app.models.transcript import TranscriptSpeaker
 from app.services.case_card_service import update_case_card
-from app.services.admin_workflow_service import sync_ticket_workflow
-from app.services.knowledge_service import retrieve_approved_knowledge
 from app.services.confidence_engine import (
     CONFIDENCE_THRESHOLD,
-    is_time_sensitive_grievance,
     score_confidence,
 )
 from app.services.escalation_service import trigger_escalation
+from app.services.query_routing_agent import route_student_query
 from app.services.resource_diagnostic_orchestrator import handle_resource_turn
 from app.services.transcript_service import append_turn
 
@@ -65,6 +63,7 @@ async def initialize_triage_session(
         "classification": None,
         "drive_id": None,
         "ticket_id": str(ticket_id),
+        "routing_done": False,
     }
     await _save_state(session_id, state)
 
@@ -79,6 +78,7 @@ async def _load_state(session_id: uuid.UUID | str) -> dict[str, Any]:
             "classification": None,
             "drive_id": None,
             "ticket_id": None,
+            "routing_done": False,
         }
     return json.loads(raw_state)
 
@@ -100,21 +100,6 @@ async def _set_call_flow(session_id: uuid.UUID, flow_type: CallFlowType) -> None
             if call_session is None:
                 raise ValueError(f"call session {session_id} does not exist")
             call_session.flow_type = flow_type
-
-
-async def _student_transcript_for_session(session_id: uuid.UUID) -> str:
-    async with get_session_factory()() as db:
-        turns = (
-            await db.scalars(
-                select(Transcript.content)
-                .where(
-                    Transcript.call_session_id == session_id,
-                    Transcript.speaker == TranscriptSpeaker.STUDENT,
-                )
-                .order_by(Transcript.turn_index)
-            )
-        ).all()
-    return " ".join(turns)
 
 
 async def handle_conversation_turn(
@@ -215,40 +200,18 @@ async def handle_triage_turn(
             }
     else:
         state["classification"] = "grievance"
-        async with get_session_factory()() as knowledge_db:
-            approved = await retrieve_approved_knowledge(knowledge_db, state["issue_summary"])
-        resolved = next((item for item in approved if item["type"] == "resolved_issue"), None)
-        if resolved:
-            action = {"next_action": "answer_from_resolved_issue", "classification": "grievance", "message": str(resolved["content"].get("response") or resolved["content"].get("resolution") or "This issue has already been resolved."), "source": resolved}
-        else:
-            action = {"next_action": "escalate_grievance", "classification": "grievance", "message": "The grievance is ready for escalation handling."}
+        action = {
+            "next_action": "route_support_query",
+            "classification": "grievance",
+            "message": "Placement support query received for routing.",
+        }
 
     action["issue_summary"] = state["issue_summary"]
     action["drive_id"] = state.get("drive_id")
     confidence = score_confidence(action)
-    placement_context = bool(
-        re.search(
-            r"\b(placement|drive|company|interview|job|application|portal)\b",
-            state["issue_summary"],
-            re.IGNORECASE,
-        )
-    )
-    urgency_confirmation = bool(
-        re.fullmatch(
-            r"\s*(yes|yeah|yep|yes it is|it is|it is urgent|urgent)\s*[.!]?\s*",
-            chunk,
-            re.IGNORECASE,
-        )
-    )
-    full_student_transcript = await _student_transcript_for_session(
-        normalized_session_id
-    )
-    urgent = placement_context and (
-        is_time_sensitive_grievance(full_student_transcript)
-        or urgency_confirmation
-    )
     action["confidence_score"] = confidence
-    action["time_sensitive"] = urgent
+    # Urgency is no longer collected in the voice flow; routing decides group vs escalate.
+    action["time_sensitive"] = False
 
     ticket_id_value = state.get("ticket_id")
     if ticket_id_value is None:
@@ -263,21 +226,57 @@ async def handle_triage_turn(
             "issue_summary": state["issue_summary"],
             "drive_id": state.get("drive_id"),
             "confidence_score": confidence,
-            "time_sensitive": urgent,
+            "time_sensitive": False,
             "last_transcript_chunk": chunk,
             "policy": action.get("policy"),
         },
     )
-    await sync_ticket_workflow(ticket_id, state["issue_summary"], confidence, urgent, action["next_action"] == "answer_from_resolved_issue")
 
-    escalation_reasons: list[str] = []
-    knowledge_resolved = action["next_action"] == "answer_from_resolved_issue"
-    if confidence < CONFIDENCE_THRESHOLD and not knowledge_resolved:
-        escalation_reasons.append("low_confidence")
-    if urgent and not knowledge_resolved:
-        escalation_reasons.append("time_sensitive_grievance")
+    routing_handled = False
+    routing_done = state.get("routing_done", False)
+    routing_decision = state.get("routing_decision")
+    should_route = action["classification"] == "grievance" and (
+        not routing_done or routing_decision != "grouped"
+    )
+    if should_route:
+        routing = await route_student_query(
+            normalized_session_id,
+            ticket_id,
+            state["issue_summary"],
+            confidence_score=confidence,
+        )
+        action["routing"] = routing.as_dict()
+        if routing.kind in {"grouped", "escalated"}:
+            state["routing_done"] = True
+            state["routing_decision"] = routing.kind
+            routing_handled = True
+            if routing.student_message:
+                action["student_reply"] = routing.student_message
+            if routing.kind == "escalated":
+                action["escalation"] = {
+                    "triggered": True,
+                    "via": "query_routing_agent",
+                    "ticket_id": str(ticket_id),
+                    "llm_provider": routing.llm_provider,
+                }
+            else:
+                action["escalation"] = {
+                    "triggered": False,
+                    "via": "query_routing_agent",
+                    "grouped_under": str(routing.parent_ticket_id),
+                    "similar_count": routing.similar_count,
+                    "llm_provider": routing.llm_provider,
+                }
+        elif routing.kind == "collecting":
+            action["next_action"] = "collect_company"
+            if routing.student_message:
+                action["student_reply"] = routing.student_message
 
-    if escalation_reasons:
+    if (
+        not routing_handled
+        and action["classification"] == "policy_question"
+        and confidence < CONFIDENCE_THRESHOLD
+    ):
         action["escalation"] = await trigger_escalation(
             normalized_session_id, ticket_id
         )

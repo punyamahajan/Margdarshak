@@ -73,3 +73,6 @@ def test_start_agent_uses_published_pipeline(monkeypatch: pytest.MonkeyPatch) ->
     assert properties["advanced_features"] == {"enable_rtm": True}
     assert properties["parameters"]["data_channel"] == "rtm"
     assert "Never ask for facts already present" in properties["llm"]["system_messages"][0]["content"]
+    assert "Do NOT ask whether the issue is urgent" in properties["llm"]["system_messages"][0]["content"]
+    assert "support chatbot" in properties["llm"]["system_messages"][0]["content"].lower()
+    assert "Tell me what you need" in properties["llm"]["greeting_message"]

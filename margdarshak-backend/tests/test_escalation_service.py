@@ -73,7 +73,7 @@ def test_trigger_escalation_only_reads_placement_drives(monkeypatch) -> None:
         assert requested_ticket_id == ticket_id
         return {"issue_summary": "Portal issue", "confidence_score": 0.5}
 
-    async def fake_handover(channel_name, poc_contact, summary):
+    async def fake_handover(channel_name, poc_contact, summary, agent_id=None):
         assert "Student: The portal failed before the deadline." in summary
         return {"status": "handover_pending"}
 

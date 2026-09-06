@@ -88,6 +88,7 @@ async def start_voice_session(
             status=TicketStatus.OPEN,
             escalated_to="",
             roll_number_snapshot=student.roll_number,
+            similar_count=1,
         )
         db.add(ticket)
         await db.flush()
