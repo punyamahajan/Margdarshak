@@ -1,0 +1,188 @@
+<USER_REQUEST>
+Seed the following 3 companies and their placement drives into the database.
+This is REAL demo data — use exactly these details, don't invent or approximate.
+
+--- COMPANY 1 ---
+Name: Acme Cloud Systems
+Industry: Cloud Infrastructure
+About: Acme Cloud Systems builds enterprise-grade cloud infrastructure products used by Fortune 500 companies. They hire engineering talent from top universities across India.
+
+Placement Drive:
+- Drive Name: Acme Campus Hiring 2026
+- Roles: Software Engineer
+- Eligibility: Final-year CSE/IT/ECE students, CGPA 7.5 or above, no active backlogs
+- CTC: ₹12L - ₹15L per annum
+- Rounds: Round 1 (Online Assessment), Round 2 (Technical Interview), Round 3 (HR Interview)
+- Application Deadline: 12 September 2026
+- Application URL: https://careers.acme-cloud.example.com/campus2026
+- Instructions: Students must register on the portal before the deadline. Bring a printed copy of resume to Round 2.
+- Status: Active
+
+--- COMPANY 2 ---
+Name: Riverbank Fintech Labs
+Industry: Financial Technology
+About: Riverbank Fintech Labs builds payment infrastructure and lending platforms. Known for strong engineering culture and competitive compensation.
+
+Placement Drive:
+- Drive Name: Riverbank Graduate Hiring 2026
+- Role: Associate Software Engineer
+- Eligibility: Final-year CSE/IT students, CGPA 7.0 or above, no active backlogs
+- CTC: ₹14L - ₹18L per annum
+- Rounds: Round 1 (Coding Test), Round 2 (System Design), Round 3 (Culture Fit)
+- Application Deadline: 11 September 2026
+- Application URL: https://riverbank.example.com/careers/2026
+- Instructions: Coding test is on HackerRank. Link will be emailed 24 hours before. Do not use IDE plugins.
+- Status: Active
+
+--- COMPANY 3 ---
+Name: Northstar Analytics
+Industry: Data Analytics & AI
+About: Northstar Analytics provides AI-powered business intelligence tools to enterprises across Southeast Asia. Strong focus on data engineering and ML roles.
+
+Placement Drive:
+- Drive Name: Northstar Campus Recruitment 2026
+- Role: Data Engineer / ML Engineer
+- Eligibility: Final-year CSE/IT/DS/AI students, CGPA 7.0 or above, no active backlogs
+- CTC: ₹13L - ₹16L per annum
+- Rounds: Round 1 (Aptitude Test), Round 2 (Data Case Study), Round 3 (Panel Interview)
+- Application Deadline: 15 September 2026
+- Application URL: https://northstar.example.com/campus
+- Instructions: Case study round requires you to bring a laptop. Python and SQL knowledge mandatory.
+- Status: Active
+
+After seeding, confirm each company and drive was created with its ID. Show me the IDs — I'll use them in the next step.
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-09-06T18:31:16+05:30.
+
+The user's current state is as follows:
+Active Document: c:\code\Margdarshak\margdarshak-backend\.env (LANGUAGE_UNSPECIFIED)
+Cursor is on line: 22
+Other open documents:
+- c:\code\Margdarshak\margdarshak-backend\.env.example (LANGUAGE_UNSPECIFIED)
+- c:\code\Margdarshak\margdarshak-pwa\src\styles.css (LANGUAGE_CSS)
+- c:\code\Margdarshak\margdarshak-backend\.env (LANGUAGE_UNSPECIFIED)
+</ADDITIONAL_METADATA>
+
+--------------------------------------------------------------------------------
+
+<USER_REQUEST>
+Seed the following 3 companies and their placement drives into the database.
+This is REAL demo data — use exactly these details, don't invent or approximate.
+
+--- COMPANY 1 ---
+Name: Acme Cloud Systems
+Industry: Cloud Infrastructure
+About: Acme Cloud Systems builds enterprise-grade cloud infrastructure products used by Fortune 500 companies. They hire engineering talent from top universities across India.
+
+Placement Drive:
+- Drive Name: Acme Campus Hiring 2026
+- Roles: Software Engineer
+- Eligibility: Final-year CSE/IT/ECE students, CGPA 7.5 or above, no active backlogs
+- CTC: ₹12L - ₹15L per annum
+- Rounds: Round 1 (Online Assessment), Round 2 (Technical Interview), Round 3 (HR Interview)
+- Application Deadline: 12 September 2026
+- Application URL: https://careers.acme-cloud.example.com/campus2026
+- Instructions: Students must register on the portal before the deadline. Bring a printed copy of resume to Round 2.
+- Status: Active
+
+--- COMPANY 2 ---
+Name: Riverbank Fintech Labs
+Industry: Financial Technology
+About: Riverbank Fintech Labs builds payment infrastructure and lending platforms. Known for strong engineering culture and competitive compensation.
+
+Placement Drive:
+- Drive Name: Riverbank Graduate Hiring 2026
+- Role: Associate Software Engineer
+- Eligibility: Final-year CSE/IT students, CGPA 7.0 or above, no active backlogs
+- CTC: ₹14L - ₹18L per annum
+- Rounds: Round 1 (Coding Test), Round 2 (System Design), Round 3 (Culture Fit)
+- Application Deadline: 11 September 2026
+- Application URL: https://riverbank.example.com/careers/2026
+- Instructions: Coding test is on HackerRank. Link will be emailed 24 hours before. Do not use IDE plugins.
+- Status: Active
+
+--- COMPANY 3 ---
+Name: Northstar Analytics
+Industry: Data Analytics & AI
+About: Northstar Analytics provides AI-powered business intelligence tools to enterprises across Southeast Asia. Strong focus on data engineering and ML roles.
+
+Placement Drive:
+- Drive Name: Northstar Campus Recruitment 2026
+- Role: Data Engineer / ML Engineer
+- Eligibility: Final-year CSE/IT/DS/AI students, CGPA 7.0 or above, no active backlogs
+- CTC: ₹13L - ₹16L per annum
+- Rounds: Round 1 (Aptitude Test), Round 2 (Data Case Study), Round 3 (Panel Interview)
+- Application Deadline: 15 September 2026
+- Application URL: https://northstar.example.com/campus
+- Instructions: Case study round requires you to bring a laptop. Python and SQL knowledge mandatory.
+- Status: Active
+
+After seeding, confirm each company and drive was created with its ID. Show me the IDs — I'll use them in the next step.
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-09-06T18:31:49+05:30.
+
+The user's current state is as follows:
+Active Document: c:\code\Margdarshak\margdarshak-backend\.env (LANGUAGE_UNSPECIFIED)
+Cursor is on line: 22
+Other open documents:
+- c:\code\Margdarshak\margdarshak-backend\.env (LANGUAGE_UNSPECIFIED)
+- c:\code\Margdarshak\margdarshak-backend\.env.example (LANGUAGE_UNSPECIFIED)
+- c:\code\Margdarshak\margdarshak-pwa\src\styles.css (LANGUAGE_CSS)
+</ADDITIONAL_METADATA>
+<USER_SETTINGS_CHANGE>
+The user changed setting `Model Selection` from Gemini 3.1 Pro (High) to Gemini 3.8 Flash (Medium). No need to comment on this change if the user doesn't ask about it. If reporting what model you are, please use a human readable name instead of the exact string.
+</USER_SETTINGS_CHANGE>
+
+--------------------------------------------------------------------------------
+
+<USER_REQUEST>
+Seed the following students and shortlist records. Use the company/drive IDs from Step 2.
+
+--- STUDENTS (seed 8 students) ---
+
+1. Name: Aarav Sharma | Enrollment: 230611 | Email: aarav@university.edu | Branch: CSE | CGPA: 8.1 | Backlogs: 0
+2. Name: Diya Mehta | Enrollment: 230622 | Email: diya@university.edu | Branch: CSE | CGPA: 7.8 | Backlogs: 0
+3. Name: Ishaan Kapoor | Enrollment: 230633 | Email: ishaan@university.edu | Branch: IT | CGPA: 7.5 | Backlogs: 0
+4. Name: Mira Patel | Enrollment: 230644 | Email: mira@university.edu | Branch: CSE | CGPA: 8.4 | Backlogs: 0
+5. Name: Rohan Verma | Enrollment: 230655 | Email: rohan@university.edu | Branch: ECE | CGPA: 7.2 | Backlogs: 0
+6. Name: Ananya Singh | Enrollment: 230666 | Email: ananya@university.edu | Branch: CSE | CGPA: 8.9 | Backlogs: 0
+7. Name: Kabir Nair | Enrollment: 230677 | Email: kabir@university.edu | Branch: IT | CGPA: 7.6 | Backlogs: 0
+8. Name: Priya Sharma | Enrollment: 230688 | Email: priya@university.edu | Branch: DS | CGPA: 8.2 | Backlogs: 0
+
+--- SHORTLISTS ---
+
+Acme Cloud Systems (Software Engineer):
+- Shortlisted: Aarav Sharma, Diya Mehta, Ishaan Kapoor, Mira Patel, Ananya Singh
+- Status for all: Assessment Pending (Round 1)
+
+Riverbank Fintech Labs (Associate Software Engineer):
+- Shortlisted: Aarav Sharma, Diya Mehta, Rohan Verma, Kabir Nair
+- Aarav Sharma: Round 2 (System Design) — Round 1 cleared
+- Others: Round 1 (Coding Test) — Assessment Pending
+
+Northstar Analytics (Data Engineer):
+- Shortlisted: Mira Patel, Ananya Singh, Priya Sharma, Kabir Nair
+- Status for all: Assessment Pending (Round 1)
+
+--- COORDINATORS (seed 2) ---
+1. Name: Priya Coordinator | Email: priya.coord@university.edu | Role: Placement Coordinator
+2. Name: Meera Kapoor | Email: meera.coord@university.edu | Role: Senior Placement Coordinator
+
+After seeding, confirm all student IDs, shortlist records, and coordinator IDs. Show me the output.
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-09-06T18:43:58+05:30.
+
+The user's current state is as follows:
+Active Document: c:\code\Margdarshak\margdarshak-backend\.env (LANGUAGE_UNSPECIFIED)
+Cursor is on line: 22
+Other open documents:
+- c:\code\Margdarshak\margdarshak-backend\.env.example (LANGUAGE_UNSPECIFIED)
+- c:\code\Margdarshak\margdarshak-pwa\src\styles.css (LANGUAGE_CSS)
+- c:\code\Margdarshak\margdarshak-backend\.env (LANGUAGE_UNSPECIFIED)
+</ADDITIONAL_METADATA>
+
+--------------------------------------------------------------------------------
+
