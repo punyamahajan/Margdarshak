@@ -4,6 +4,7 @@ import type { VoiceHistorySession } from "../services/apiClient";
 export type ConversationCardProps = {
   session: VoiceHistorySession;
   defaultExpanded?: boolean;
+  onOpenSummary?: (session: VoiceHistorySession) => void;
 };
 
 function formatSessionDate(dateString: string): string {
@@ -57,7 +58,11 @@ export function extractConversationTitle(session: VoiceHistorySession): string {
   return "Voice guidance session";
 }
 
-export function ConversationCard({ session, defaultExpanded = false }: ConversationCardProps) {
+export function ConversationCard({
+  session,
+  defaultExpanded = false,
+  onOpenSummary,
+}: ConversationCardProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [copied, setCopied] = useState(false);
 
@@ -66,6 +71,14 @@ export function ConversationCard({ session, defaultExpanded = false }: Conversat
   const turnCount = session.turns.length;
 
   const previewSnippet = session.turns.find((t) => t.content.trim())?.content.trim() ?? "";
+
+  const handleCardClick = () => {
+    if (onOpenSummary) {
+      onOpenSummary(session);
+    } else {
+      setExpanded(!expanded);
+    }
+  };
 
   const copyTranscript = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -87,11 +100,18 @@ export function ConversationCard({ session, defaultExpanded = false }: Conversat
       className={`conversation-card ${expanded ? "conversation-card--expanded" : ""}`}
       aria-expanded={expanded}
     >
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         className="conversation-card__trigger"
-        onClick={() => setExpanded(!expanded)}
-        aria-label={`${title}, ${formattedDate}`}
+        onClick={handleCardClick}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            handleCardClick();
+          }
+        }}
+        aria-label={`${title}, ${formattedDate}. Click to view chat summary and resources.`}
       >
         <div className="conversation-card__header">
           <div className="conversation-card__icon" aria-hidden="true">
@@ -108,10 +128,24 @@ export function ConversationCard({ session, defaultExpanded = false }: Conversat
                   ? "No speech"
                   : `${turnCount} ${turnCount === 1 ? "turn" : "turns"}`}
               </span>
+              <span
+                className="conversation-card__summary-pill"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenSummary ? onOpenSummary(session) : setExpanded(!expanded);
+                }}
+              >
+                Summary & Links ↗
+              </span>
             </div>
           </div>
           <div
             className={`conversation-card__chevron ${expanded ? "conversation-card__chevron--rotated" : ""}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpanded(!expanded);
+            }}
+            title={expanded ? "Collapse inline preview" : "Expand inline preview"}
             aria-hidden="true"
           >
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -125,7 +159,7 @@ export function ConversationCard({ session, defaultExpanded = false }: Conversat
             "{previewSnippet.length > 90 ? `${previewSnippet.slice(0, 87)}…` : previewSnippet}"
           </p>
         ) : null}
-      </button>
+      </div>
 
       {expanded ? (
         <div className="conversation-card__content">

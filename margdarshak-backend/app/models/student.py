@@ -28,6 +28,9 @@ class Student(Base):
     )
     phone: Mapped[str] = mapped_column(String(30))
     linkedin_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    known_subjects: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    explore_topics: Mapped[list[str]] = mapped_column(JSONB, default=list)
     tags: Mapped[list[str]] = mapped_column(JSONB, default=list)
     matchmaking_opt_in: Mapped[bool] = mapped_column(Boolean, default=False)
 

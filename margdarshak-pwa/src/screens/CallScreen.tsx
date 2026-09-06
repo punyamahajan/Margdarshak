@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useAuth } from "../context/AuthContext";
 import { Waveform } from "../components/Waveform";
 import {
   SummaryCard,
@@ -74,6 +75,13 @@ function linksInText(value: string): string[] {
 const STUDENT_ID = import.meta.env.VITE_STUDENT_ID as string | undefined;
 
 export function CallScreen({ onBack }: CallScreenProps) {
+  const { student, openProfileModal } = useAuth();
+  const activeStudentId = student?.id ?? STUDENT_ID;
+
+  const initials = student?.name
+    ? student.name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase()
+    : "ST";
+
   const [session, setSession] = useState<VoiceSession | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
   const [agentNotice, setAgentNotice] = useState<string | null>(null);
@@ -114,15 +122,15 @@ export function CallScreen({ onBack }: CallScreenProps) {
   useEffect(() => {
     if (startedRef.current) return;
     startedRef.current = true;
-    if (!STUDENT_ID) {
-      setStartError("Set VITE_STUDENT_ID to an existing student UUID before starting a call.");
+    if (!activeStudentId) {
+      setStartError("Please sign in or set VITE_STUDENT_ID before starting a call.");
       return;
     }
     void apiClient
-      .startVoiceSession(STUDENT_ID)
+      .startVoiceSession(activeStudentId)
       .then((startedSession) => {
         setSession(startedSession);
-        void apiClient.getVoiceHistory(STUDENT_ID).then((history) => {
+        void apiClient.getVoiceHistory(activeStudentId).then((history) => {
           setEarlierSessions(
             history.filter((item) => item.session_id !== startedSession.session_id)
           );
@@ -182,10 +190,10 @@ export function CallScreen({ onBack }: CallScreenProps) {
   }, [session]);
 
   useEffect(() => {
-    if (!STUDENT_ID) return;
+    if (!activeStudentId) return;
     const loadTickets = async () => {
       try {
-        setRaisedTickets(await apiClient.listTickets({ studentId: STUDENT_ID }));
+        setRaisedTickets(await apiClient.listTickets({ studentId: activeStudentId }));
       } catch {
         // Ticket list is supplementary to the live call.
       }
@@ -193,7 +201,7 @@ export function CallScreen({ onBack }: CallScreenProps) {
     void loadTickets();
     const timer = window.setInterval(loadTickets, 4000);
     return () => window.clearInterval(timer);
-  }, [session?.ticket_id, caseCard.routing_decision, caseCard.similar_count]);
+  }, [activeStudentId, session?.ticket_id, caseCard.routing_decision, caseCard.similar_count]);
 
   useEffect(() => {
     if (!session || resourceRecommendation || !resourceRequestDetected) return;
@@ -375,6 +383,17 @@ export function CallScreen({ onBack }: CallScreenProps) {
               <span className="chat-history-count-badge">{earlierSessions.length}</span>
             ) : null}
           </button>
+          {student && (
+            <button
+              type="button"
+              className="nav-profile-btn nav-profile-btn--compact"
+              onClick={openProfileModal}
+              aria-label="Open Student Profile"
+              title={`${student.name} · View & edit subjects`}
+            >
+              <span className="nav-profile-avatar" aria-hidden="true">{initials}</span>
+            </button>
+          )}
         </div>
       </header>
 
@@ -419,6 +438,27 @@ export function CallScreen({ onBack }: CallScreenProps) {
           <p className="call-screen__error" role="alert">{startError ?? agoraError}</p>
         ) : null}
         {agentNotice ? <p className="call-screen__notice" role="status">{agentNotice}</p> : null}
+
+        {/* Primary Call Controls: Positioned right below the chatbot and above the cards */}
+        <div className="call-screen__controls call-screen__controls--primary">
+          {visibleState !== "Call ended" ? (
+            <>
+              <button
+                className="turn-button"
+                type="button"
+                onClick={doneSpeaking ? resumeSpeaking : finishSpeaking}
+                disabled={!microphoneReady || ending}
+              >
+                {doneSpeaking ? "Speak again" : "I’m done speaking"}
+              </button>
+              <button className="hang-up-button" type="button" onClick={hangUp} disabled={ending}>
+                {ending ? "Ending…" : "Hang up"}
+              </button>
+            </>
+          ) : (
+            <button className="text-button" type="button" onClick={onBack}>Back home</button>
+          )}
+        </div>
       </section>
 
       <section className="call-screen__details" aria-label="Conversation details">
@@ -495,25 +535,6 @@ export function CallScreen({ onBack }: CallScreenProps) {
         </article>
       </section>
 
-      <footer className="call-screen__controls">
-        {visibleState !== "Call ended" ? (
-          <>
-            <button
-              className="turn-button"
-              type="button"
-              onClick={doneSpeaking ? resumeSpeaking : finishSpeaking}
-              disabled={!microphoneReady || ending}
-            >
-              {doneSpeaking ? "Speak again" : "I’m done speaking"}
-            </button>
-            <button className="hang-up-button" type="button" onClick={hangUp} disabled={ending}>
-              {ending ? "Ending…" : "Hang up"}
-            </button>
-          </>
-        ) : (
-          <button className="text-button" type="button" onClick={onBack}>Back home</button>
-        )}
-      </footer>
       <div className="call-screen__summary-layer">
         {liveSummary ? (
           <SummaryCard
