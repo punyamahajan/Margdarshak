@@ -1,48 +1,51 @@
 # Margdarshak AI
 
-Margdarshak is a voice-first placement guidance platform. This branch contains:
+Voice-first campus placement guidance: students talk to an Agora AI agent, tickets are triaged and routed, and coordinators get escalations when needed.
 
-- `margdarshak-backend` — FastAPI and Agora integration
-- `margdarshak-pwa` — React student application
-- `margdarshak-test-client` — optional Agora debugging page
+| Folder | Role |
+|---|---|
+| `margdarshak-backend` | FastAPI API, Postgres, Redis, Agora, query routing |
+| `margdarshak-pwa` | React student app (Vite) |
+| `margdarshak-test-client` | Optional Agora debug page |
 
 Everything runs on localhost. Docker is not required.
 
-## Requirements
+---
 
-Install these before starting:
+## Requirements
 
 - Python 3.10+
 - Node.js 20.19+
-- PostgreSQL 14+
-- Redis 7+ or another locally running Redis-compatible service
+- PostgreSQL 14+ on `localhost:5432`
+- Redis 7+ on `localhost:6379`
 - Agora project credentials and a published Agent Studio pipeline
+- Optional: `GEMINI_API_KEY` or `OPENAI_API_KEY` for semantic query deduplication (lexical fallback works without them)
 
-PostgreSQL must be available on `localhost:5432` and Redis on `localhost:6379` unless you change their URLs in the backend `.env`.
+---
 
-## 1. Create the local database
+## How to start (first time)
 
-Start PostgreSQL and Redis, then create a PostgreSQL database named `margdarshak`:
+### 1. Start Postgres and Redis
+
+Create the database:
 
 ```powershell
 createdb -U postgres margdarshak
 ```
 
-If `createdb` is unavailable, create the database through pgAdmin or run:
+Or in SQL:
 
 ```sql
 CREATE DATABASE margdarshak;
 ```
 
-## 2. Configure the backend
-
-From the repository root:
+### 2. Configure the backend
 
 ```powershell
-Copy-Item margdarshak-backend\.env.example margdarshak-backend\.env
+Copy-Item margdarshak-backend\.env.examplee margdarshak-backend\.env
 ```
 
-Open `margdarshak-backend/.env`. Update the PostgreSQL password and replace the Agora placeholders:
+Edit `margdarshak-backend/.env`:
 
 ```dotenv
 DATABASE_URL=postgresql+asyncpg://postgres:YOUR_PASSWORD@localhost:5432/margdarshak
@@ -53,11 +56,17 @@ AGORA_APP_CERTIFICATE=your_app_certificate
 AGORA_CUSTOMER_ID=your_customer_id
 AGORA_CUSTOMER_SECRET=your_customer_secret
 AGORA_AI_AGENT=your_published_pipeline_id
+
+# Optional — semantic ticket grouping (Gemini preferred)
+GEMINI_API_KEY=
+OPENAI_API_KEY=
+LLM_PROVIDER=auto
+GEMINI_MODEL=gemini-flash-latest
 ```
 
-Keep the certificate, Customer Secret, and database password in the backend only.
+Keep secrets in the backend `.env` only.
 
-## 3. Install and prepare the backend
+### 3. Install, migrate, and seed the backend
 
 ```powershell
 cd margdarshak-backend
@@ -69,16 +78,14 @@ python -m app.db.seed_resources
 python -m app.db.seed_test_data
 ```
 
-The seed commands add demo students, placement drives, and learning resources. They are safe to run more than once.
-
-If PowerShell blocks activation:
+If PowerShell blocks venv activation:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\.venv\Scripts\Activate.ps1
 ```
 
-## 4. Start the backend
+### 4. Start the backend
 
 Keep this terminal open:
 
@@ -86,103 +93,50 @@ Keep this terminal open:
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Check that it works:
+- Health: <http://127.0.0.1:8000/health>
+- API docs: <http://127.0.0.1:8000/docs>
 
-- <http://127.0.0.1:8000/health>
-- <http://127.0.0.1:8000/docs>
+### 5. Copy a demo student ID
 
-## 5. Get a demo student ID
-
-Open another terminal and run:
+In another terminal:
 
 ```powershell
 psql -U postgres -d margdarshak -c "SELECT id, roll_number, name FROM students ORDER BY roll_number;"
 ```
 
-Copy one value from the `id` column. You can run the same query in pgAdmin if `psql` is not on your PATH.
+Copy one `id` value (or run the same query in pgAdmin).
 
-## 6. Configure and start the student app
-
-From the repository root:
+### 6. Configure and start the student app
 
 ```powershell
 Copy-Item margdarshak-pwa\.env.example margdarshak-pwa\.env
 ```
 
-Open `margdarshak-pwa/.env` and paste the student UUID:
+Edit `margdarshak-pwa/.env`:
 
 ```dotenv
 VITE_API_BASE_URL=http://127.0.0.1:8000/api/v1
 VITE_STUDENT_ID=paste_student_uuid_here
 ```
 
-Then start React:
+Then:
 
 ```powershell
 cd margdarshak-pwa
 npm.cmd install
-npm.cmd run dev
+npm.cmd run dev -- --host 127.0.0.1 --port 5173
 ```
 
-Open <http://localhost:5173> and allow microphone access when starting a voice conversation.
+Open <http://127.0.0.1:5173> and allow the microphone when you start a voice call.
 
-## Start it again later
+---
 
-Once installation, migrations, and seeding are complete, normal startup only requires two terminals.
+## How to start again (after first setup)
 
-Terminal 1:
+1. Start PostgreSQL and Redis.
+2. Open two terminals from the repo root.
 
-```powershell
-cd margdarshak-backend
-.\.venv\Scripts\Activate.ps1
-uvicorn app.main:app --reload
-```
-
-Terminal 2:
-
-```powershell
-cd margdarshak-pwa
-npm.cmd run dev
-```
-
-PostgreSQL and Redis must already be running locally.
-
-## Run checks
-
-Backend:
-
-```powershell
-cd margdarshak-backend
-.\.venv\Scripts\python.exe -m pytest -q
-```
-
-Frontend:
-
-```powershell
-cd margdarshak-pwa
-npm.cmd run typecheck
-npm.cmd run build
-```
-
-## Common problems
-
-### `VITE_STUDENT_ID` is missing
-
-Create `margdarshak-pwa/.env`, add a seeded student UUID, and restart Vite.
-
-### PostgreSQL connection fails
-
-Confirm PostgreSQL is running, the `margdarshak` database exists, and the password in `DATABASE_URL` is correct.
-
-### Redis connection fails
-
-Confirm a Redis-compatible service is listening on `localhost:6379`.
-
-## Quick Start
-
-After the first-time setup is complete, start PostgreSQL and Redis, then open two terminals from the repository root.
-
-Terminal 1, start the backend:
+**Terminal 1 — backend**
 
 ```powershell
 cd margdarshak-backend
@@ -190,25 +144,56 @@ cd margdarshak-backend
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Terminal 2, start the frontend:
+**Terminal 2 — frontend**
 
 ```powershell
 cd margdarshak-pwa
 npm.cmd run dev -- --host 127.0.0.1 --port 5173
 ```
 
-Open the app at <http://127.0.0.1:5173>. The backend health check is available at <http://127.0.0.1:8000/health>, and the API documentation is available at <http://127.0.0.1:8000/docs>.
+App: <http://127.0.0.1:5173>  
+API health: <http://127.0.0.1:8000/health>
 
-### `npm.ps1` is blocked
+If you pulled new migrations:
 
-Use `npm.cmd` as shown above.
+```powershell
+cd margdarshak-backend
+.\.venv\Scripts\Activate.ps1
+alembic upgrade head
+```
 
-### Agora agent startup fails
+---
 
-Confirm the App ID and certificate belong to the same project, the REST Customer credentials are valid, and `AGORA_AI_AGENT` contains a published pipeline ID.
+## Run checks
 
-## Current demo limitation
+```powershell
+cd margdarshak-backend
+.\.venv\Scripts\python.exe -m pytest -q
+```
 
-Agora Conversational AI startup is implemented. External coordinator invitation is still an integration boundary and currently remains in `handover_pending` state.
+```powershell
+cd margdarshak-pwa
+npm.cmd run typecheck
+npm.cmd run build
+```
 
-The configured `VITE_STUDENT_ID` is a temporary localhost/demo identity mechanism until authentication is added.
+---
+
+## Common problems
+
+| Problem | Fix |
+|---|---|
+| `VITE_STUDENT_ID` missing | Set a seeded student UUID in `margdarshak-pwa/.env`, restart Vite |
+| Postgres connection fails | Confirm Postgres is up, DB `margdarshak` exists, password in `DATABASE_URL` is correct |
+| Redis connection fails | Confirm Redis is listening on `localhost:6379` |
+| `npm.ps1` is blocked | Use `npm.cmd` as shown above |
+| Agora agent startup fails | Same Agora project for App ID + certificate; valid Customer REST credentials; published `AGORA_AI_AGENT` pipeline ID |
+| Query grouping feels weak | Set `GEMINI_API_KEY` or `OPENAI_API_KEY` (without keys, lexical similarity is used) |
+
+---
+
+## Demo notes
+
+- `VITE_STUDENT_ID` is a temporary demo identity until auth is added.
+- New placement grievances are deduplicated by the query routing agent; duplicates are grouped and counted, new issues escalate to the coordinator via Agora.
+- Coordinator invite still records `handover_pending` when a live human join API is not available for the project.

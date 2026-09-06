@@ -41,10 +41,13 @@ async def get_ticket(
 @router.get("", response_model=list[TicketWithCaseCard])
 async def list_tickets(
     status: TicketStatus | None = None,
+    student_id: uuid.UUID | None = None,
     db: AsyncSession = Depends(get_db_session),
 ) -> list[TicketWithCaseCard]:
     statement = select(Ticket).order_by(Ticket.created_at.desc())
     if status is not None:
         statement = statement.where(Ticket.status == status)
+    if student_id is not None:
+        statement = statement.where(Ticket.student_id == student_id)
     tickets = (await db.scalars(statement)).all()
     return [await _serialize_ticket(ticket) for ticket in tickets]

@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, String, Text, func
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -36,6 +36,10 @@ class Ticket(Base):
     )
     escalated_to: Mapped[str] = mapped_column(String(255))
     roll_number_snapshot: Mapped[str] = mapped_column(String(50))
+    parent_ticket_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("tickets.id"), nullable=True, index=True
+    )
+    similar_count: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -43,3 +47,28 @@ class Ticket(Base):
     student: Mapped["Student"] = relationship(back_populates="tickets")
     drive: Mapped["PlacementDrive | None"] = relationship(back_populates="tickets")
     case_cards: Mapped[list["CaseCard"]] = relationship(back_populates="ticket")
+    parent_ticket: Mapped["Ticket | None"] = relationship(
+        remote_side="Ticket.id",
+        back_populates="child_tickets",
+        foreign_keys=[parent_ticket_id],
+    )
+    child_tickets: Mapped[list["Ticket"]] = relationship(
+        back_populates="parent_ticket",
+        foreign_keys=[parent_ticket_id],
+    )
+
+    @property
+    def display_status(self) -> str:
+        if self.status == TicketStatus.ESCALATED:
+            return "Pending with coordinator"
+        if self.status == TicketStatus.RESOLVED:
+            return "Resolved"
+        return "Waiting for reply"
+
+    @property
+    def display_status_detail(self) -> str:
+        if self.status == TicketStatus.ESCALATED:
+            return "Escalated and awaiting the placement coordinator's action"
+        if self.status == TicketStatus.RESOLVED:
+            return "This ticket has been resolved"
+        return "No response yet"

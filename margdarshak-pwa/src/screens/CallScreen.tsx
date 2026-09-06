@@ -9,6 +9,7 @@ import { useAgoraCall } from "../hooks/useAgoraCall";
 import {
   apiClient,
   type ResourceRecommendation,
+  type TicketWithCaseCard,
   type VoiceHistorySession,
   type VoiceSession
 } from "../services/apiClient";
@@ -23,7 +24,17 @@ type LiveSummary = {
   variant: SummaryCardVariant;
 };
 
-const hiddenCaseFields = new Set(["policy", "last_transcript_chunk"]);
+const hiddenCaseFields = new Set([
+  "policy",
+  "last_transcript_chunk",
+  "routing_decision",
+  "routing_score",
+  "student_reply",
+  "escalation",
+  "parent_ticket_id",
+  "latest_duplicate_ticket_id",
+  "llm_provider",
+]);
 
 function isPopulated(value: unknown): boolean {
   return value !== null && value !== undefined && value !== "";
@@ -59,7 +70,6 @@ function linksInText(value: string): string[] {
 }
 
 const STUDENT_ID = import.meta.env.VITE_STUDENT_ID as string | undefined;
-const URGENT_SUPPORT_PHONE = "6397204766";
 
 function sessionTitle(history: VoiceHistorySession): string {
   const firstStudentTurn = history.turns.find((turn) => turn.speaker === "student");
@@ -77,6 +87,24 @@ function sessionDate(value: string): string {
   }).format(new Date(value));
 }
 
+function ticketStatusTone(status: TicketWithCaseCard["status"]): string {
+  if (status === "escalated") return "pending";
+  if (status === "resolved") return "resolved";
+  return "waiting";
+}
+
+function ticketHeadline(ticket: TicketWithCaseCard): string {
+  const summary = ticket.issue_summary.trim();
+  if (summary) {
+    return summary.length > 72 ? `${summary.slice(0, 69)}...` : summary;
+  }
+  const cardSummary = ticket.case_card?.issue_summary;
+  if (typeof cardSummary === "string" && cardSummary.trim()) {
+    return cardSummary.length > 72 ? `${cardSummary.slice(0, 69)}...` : cardSummary;
+  }
+  return "Placement support ticket";
+}
+
 export function CallScreen({ onBack }: CallScreenProps) {
   const [session, setSession] = useState<VoiceSession | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
@@ -92,6 +120,7 @@ export function CallScreen({ onBack }: CallScreenProps) {
   const [linkRequestBusy, setLinkRequestBusy] = useState(false);
   const [linkRequestError, setLinkRequestError] = useState<string | null>(null);
   const [earlierSessions, setEarlierSessions] = useState<VoiceHistorySession[]>([]);
+  const [raisedTickets, setRaisedTickets] = useState<TicketWithCaseCard[]>([]);
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const startedRef = useRef(false);
   const handoffSeenRef = useRef(false);
@@ -112,6 +141,13 @@ export function CallScreen({ onBack }: CallScreenProps) {
     transcript
   } = useAgoraCall(session);
   const resourceRequestDetected = caseCard.request_type === "learning_resource";
+  const visibleRaisedTickets = raisedTickets.filter(
+    (ticket) =>
+      ticket.issue_summary.trim().length > 0 ||
+      ticket.status === "escalated" ||
+      ticket.parent_ticket_id !== null ||
+      ticket.similar_count > 1
+  );
 
   useEffect(() => {
     if (startedRef.current) return;
@@ -182,6 +218,20 @@ export function CallScreen({ onBack }: CallScreenProps) {
     const timer = window.setInterval(checkHandoff, 2500);
     return () => window.clearInterval(timer);
   }, [session]);
+
+  useEffect(() => {
+    if (!STUDENT_ID) return;
+    const loadTickets = async () => {
+      try {
+        setRaisedTickets(await apiClient.listTickets({ studentId: STUDENT_ID }));
+      } catch {
+        // Ticket list is supplementary to the live call.
+      }
+    };
+    void loadTickets();
+    const timer = window.setInterval(loadTickets, 4000);
+    return () => window.clearInterval(timer);
+  }, [session?.ticket_id, caseCard.routing_decision, caseCard.similar_count]);
 
   useEffect(() => {
     if (!session || resourceRecommendation || !resourceRequestDetected) return;
@@ -347,13 +397,18 @@ export function CallScreen({ onBack }: CallScreenProps) {
             <strong>Your urgent case is queued for {handoffName}</strong>
           </div>
         ) : null}
-        {caseCard.time_sensitive === true || escalated ? (
+        {escalated || caseCard.routing_decision === "escalated" ? (
           <div className="urgent-support-card" role="status">
-            <strong>This placement issue is marked urgent.</strong>
-            <span>Tap below to open your phone dialler. The call starts only after you confirm it.</span>
-            <a className="urgent-call-action" href={`tel:${URGENT_SUPPORT_PHONE}`}>
-              Call support now · {URGENT_SUPPORT_PHONE}
-            </a>
+            <strong>
+              {typeof caseCard.student_reply === "string" && caseCard.student_reply.trim()
+                ? caseCard.student_reply
+                : "Connecting to coordinator."}
+            </strong>
+            <span>Your case has been sent to the placement coordinator with the live context.</span>
+          </div>
+        ) : typeof caseCard.student_reply === "string" && caseCard.student_reply.trim() ? (
+          <div className="urgent-support-card" role="status">
+            <strong>{caseCard.student_reply}</strong>
           </div>
         ) : null}
         <Waveform
@@ -405,6 +460,41 @@ export function CallScreen({ onBack }: CallScreenProps) {
                 ))}
             </dl>
           ) : <p className="empty-detail">Listening for useful details…</p>}
+
+          <div className="tickets-raised" aria-label="Tickets raised">
+            <div className="tickets-raised__header">
+              <p className="section-kicker">Tickets Raised</p>
+              <span>{visibleRaisedTickets.length}</span>
+            </div>
+            {visibleRaisedTickets.length ? (
+              <ul className="tickets-raised__list">
+                {visibleRaisedTickets.map((ticket) => (
+                  <li key={ticket.id} className="ticket-raised-item">
+                    <div className="ticket-raised-item__top">
+                      <strong>{ticketHeadline(ticket)}</strong>
+                      <span
+                        className={`ticket-status-badge ticket-status-badge--${ticketStatusTone(ticket.status)}`}
+                        title={ticket.display_status_detail}
+                      >
+                        {ticket.display_status}
+                      </span>
+                    </div>
+                    <p className="ticket-raised-item__detail">{ticket.display_status_detail}</p>
+                    {ticket.similar_count > 1 ? (
+                      <p className="ticket-raised-item__crowd">
+                        {ticket.similar_count} students facing the same issue
+                      </p>
+                    ) : null}
+                    {ticket.parent_ticket_id ? (
+                      <p className="ticket-raised-item__crowd">Grouped with an existing open query</p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="empty-detail">No tickets raised in this conversation yet.</p>
+            )}
+          </div>
         </article>
 
         <article className="shared-links-card">

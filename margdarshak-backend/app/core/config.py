@@ -24,6 +24,14 @@ class Settings(BaseSettings):
     triage_session_ttl_seconds: int = 86400
     expiry_worker_interval_seconds: int = 60
 
+    # Query deduplication / routing agent (Gemini preferred; OpenAI as fallback).
+    gemini_api_key: SecretStr = SecretStr("")
+    openai_api_key: SecretStr = SecretStr("")
+    llm_provider: str = "auto"
+    gemini_model: str = "gemini-flash-latest"
+    openai_model: str = "gpt-4o-mini"
+    query_similarity_threshold: float = 0.75
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
