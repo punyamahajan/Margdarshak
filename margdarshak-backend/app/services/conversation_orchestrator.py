@@ -233,7 +233,12 @@ async def handle_triage_turn(
     )
 
     routing_handled = False
-    if action["classification"] == "grievance" and not state.get("routing_done"):
+    routing_done = state.get("routing_done", False)
+    routing_decision = state.get("routing_decision")
+    should_route = action["classification"] == "grievance" and (
+        not routing_done or routing_decision != "grouped"
+    )
+    if should_route:
         routing = await route_student_query(
             normalized_session_id,
             ticket_id,
@@ -243,6 +248,7 @@ async def handle_triage_turn(
         action["routing"] = routing.as_dict()
         if routing.kind in {"grouped", "escalated"}:
             state["routing_done"] = True
+            state["routing_decision"] = routing.kind
             routing_handled = True
             if routing.student_message:
                 action["student_reply"] = routing.student_message
@@ -262,7 +268,9 @@ async def handle_triage_turn(
                     "llm_provider": routing.llm_provider,
                 }
         elif routing.kind == "collecting":
-            action["next_action"] = "collect_issue_details"
+            action["next_action"] = "collect_company"
+            if routing.student_message:
+                action["student_reply"] = routing.student_message
 
     if (
         not routing_handled

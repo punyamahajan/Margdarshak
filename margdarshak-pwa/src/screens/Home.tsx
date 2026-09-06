@@ -1,5 +1,10 @@
+import { useEffect, useState } from "react";
 import { PlacementCard } from "../components/PlacementCard";
+import { ChatHistoryDrawer } from "../components/ChatHistoryDrawer";
 import { demoStudent, placementUpdate, studentPlacements } from "../data/studentData";
+import { apiClient, type VoiceHistorySession } from "../services/apiClient";
+
+const STUDENT_ID = import.meta.env.VITE_STUDENT_ID as string | undefined;
 
 type HomeProps = { onStartCall: () => void; onFindMatch: () => void; onOpenPlacement: (id: string) => void };
 
@@ -12,11 +17,47 @@ function ChatIcon() {
 }
 
 export function Home({ onStartCall, onFindMatch, onOpenPlacement }: HomeProps) {
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historySessions, setHistorySessions] = useState<VoiceHistorySession[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  useEffect(() => {
+    if (!STUDENT_ID) return;
+    setHistoryLoading(true);
+    apiClient
+      .getVoiceHistory(STUDENT_ID)
+      .then(setHistorySessions)
+      .catch(() => undefined)
+      .finally(() => setHistoryLoading(false));
+  }, []);
+
   return (
     <main className="home-screen">
       <nav className="home-nav" aria-label="Main navigation">
-        <a className="home-brand" href="/" aria-label="Margdarshak home"><span className="home-brand__mark" aria-hidden="true">M</span><span>Margdarshak</span></a>
-        <div className="student-menu" aria-label="Signed-in student"><span className="student-menu__avatar" aria-hidden="true">AS</span><span><strong>{demoStudent.name}</strong><small>{demoStudent.university}</small></span></div>
+        <a className="home-brand" href="/" aria-label="Margdarshak home">
+          <span className="home-brand__mark" aria-hidden="true">M</span>
+          <span>Margdarshak</span>
+        </a>
+        <div className="home-nav__right">
+          <button
+            type="button"
+            className="chat-history-nav-btn"
+            onClick={() => setHistoryOpen(true)}
+            aria-label="Open Chat History side panel"
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+              <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14H6v-2h6v2zm4-4H6v-2h10v2zm0-4H6V7h10v2z" />
+            </svg>
+            <span>Chat History</span>
+            {historySessions.length ? (
+              <span className="chat-history-count-badge">{historySessions.length}</span>
+            ) : null}
+          </button>
+          <div className="student-menu" aria-label="Signed-in student">
+            <span className="student-menu__avatar" aria-hidden="true">AS</span>
+            <span><strong>{demoStudent.name}</strong><small>{demoStudent.university}</small></span>
+          </div>
+        </div>
       </nav>
 
       <section className="home-hero" aria-labelledby="home-title">
@@ -52,6 +93,14 @@ export function Home({ onStartCall, onFindMatch, onOpenPlacement }: HomeProps) {
       </section>
 
       <footer className="home-footer"><p><span aria-hidden="true">●</span> A confidential space for Aarohan students</p><p>If something is urgent, Margdarshak can route it to the support desk.</p></footer>
+
+      <ChatHistoryDrawer
+        isOpen={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        sessions={historySessions}
+        loading={historyLoading}
+        onStartNewChat={onStartCall}
+      />
     </main>
   );
 }

@@ -17,13 +17,22 @@ class TicketWithCaseCard(TicketRead):
     case_card: dict[str, Any] | None = None
 
 
-async def _serialize_ticket(ticket: Ticket) -> TicketWithCaseCard:
+async def _serialize_ticket(
+    ticket: Ticket, db: AsyncSession | None = None
+) -> TicketWithCaseCard:
     try:
         case_card = await get_case_card(ticket.id)
     except CaseCardNotFoundError:
         case_card = None
+
+    similar_count = ticket.similar_count or 1
+    if ticket.parent_ticket_id is not None and db is not None:
+        parent = await db.get(Ticket, ticket.parent_ticket_id)
+        if parent is not None and (parent.similar_count or 1) > similar_count:
+            similar_count = parent.similar_count
+
     return TicketWithCaseCard.model_validate(ticket).model_copy(
-        update={"case_card": case_card}
+        update={"case_card": case_card, "similar_count": similar_count}
     )
 
 
@@ -35,7 +44,7 @@ async def get_ticket(
     ticket = await db.get(Ticket, ticket_id)
     if ticket is None:
         raise HTTPException(status_code=404, detail="ticket not found")
-    return await _serialize_ticket(ticket)
+    return await _serialize_ticket(ticket, db)
 
 
 @router.get("", response_model=list[TicketWithCaseCard])
@@ -50,4 +59,4 @@ async def list_tickets(
     if student_id is not None:
         statement = statement.where(Ticket.student_id == student_id)
     tickets = (await db.scalars(statement)).all()
-    return [await _serialize_ticket(ticket) for ticket in tickets]
+    return [await _serialize_ticket(ticket, db) for ticket in tickets]

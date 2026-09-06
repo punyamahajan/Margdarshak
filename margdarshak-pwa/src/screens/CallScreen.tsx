@@ -5,6 +5,8 @@ import {
   type SummaryCardContent,
   type SummaryCardVariant
 } from "../components/SummaryCard";
+import { RaisedTicketsCard } from "../components/RaisedTicketsCard";
+import { ChatHistoryDrawer } from "../components/ChatHistoryDrawer";
 import { useAgoraCall } from "../hooks/useAgoraCall";
 import {
   apiClient,
@@ -71,40 +73,6 @@ function linksInText(value: string): string[] {
 
 const STUDENT_ID = import.meta.env.VITE_STUDENT_ID as string | undefined;
 
-function sessionTitle(history: VoiceHistorySession): string {
-  const firstStudentTurn = history.turns.find((turn) => turn.speaker === "student");
-  if (!firstStudentTurn) return "Voice guidance conversation";
-  const title = firstStudentTurn.content.trim();
-  return title.length > 56 ? `${title.slice(0, 53)}...` : title;
-}
-
-function sessionDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    day: "numeric",
-    month: "short",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(value));
-}
-
-function ticketStatusTone(status: TicketWithCaseCard["status"]): string {
-  if (status === "escalated") return "pending";
-  if (status === "resolved") return "resolved";
-  return "waiting";
-}
-
-function ticketHeadline(ticket: TicketWithCaseCard): string {
-  const summary = ticket.issue_summary.trim();
-  if (summary) {
-    return summary.length > 72 ? `${summary.slice(0, 69)}...` : summary;
-  }
-  const cardSummary = ticket.case_card?.issue_summary;
-  if (typeof cardSummary === "string" && cardSummary.trim()) {
-    return cardSummary.length > 72 ? `${cardSummary.slice(0, 69)}...` : cardSummary;
-  }
-  return "Placement support ticket";
-}
-
 export function CallScreen({ onBack }: CallScreenProps) {
   const [session, setSession] = useState<VoiceSession | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
@@ -121,6 +89,7 @@ export function CallScreen({ onBack }: CallScreenProps) {
   const [linkRequestError, setLinkRequestError] = useState<string | null>(null);
   const [earlierSessions, setEarlierSessions] = useState<VoiceHistorySession[]>([]);
   const [raisedTickets, setRaisedTickets] = useState<TicketWithCaseCard[]>([]);
+  const [sidePanelOpen, setSidePanelOpen] = useState(false);
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const startedRef = useRef(false);
   const handoffSeenRef = useRef(false);
@@ -141,13 +110,6 @@ export function CallScreen({ onBack }: CallScreenProps) {
     transcript
   } = useAgoraCall(session);
   const resourceRequestDetected = caseCard.request_type === "learning_resource";
-  const visibleRaisedTickets = raisedTickets.filter(
-    (ticket) =>
-      ticket.issue_summary.trim().length > 0 ||
-      ticket.status === "escalated" ||
-      ticket.parent_ticket_id !== null ||
-      ticket.similar_count > 1
-  );
 
   useEffect(() => {
     if (startedRef.current) return;
@@ -386,8 +348,34 @@ export function CallScreen({ onBack }: CallScreenProps) {
   return (
     <main className="call-screen">
       <header className="call-screen__header">
-        <p className="wordmark">Margdarshak</p>
-        <p className="call-screen__state" aria-live="polite">{visibleState}</p>
+        <div className="call-screen__brand-group">
+          <button
+            type="button"
+            className="call-screen__back-btn"
+            onClick={onBack}
+            aria-label="Back to home"
+          >
+            ←
+          </button>
+          <p className="wordmark">Margdarshak</p>
+        </div>
+        <div className="call-screen__header-right">
+          <p className="call-screen__state" aria-live="polite">{visibleState}</p>
+          <button
+            type="button"
+            className="chat-history-nav-btn"
+            onClick={() => setSidePanelOpen(true)}
+            aria-label="Open Chat History side panel"
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+              <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14H6v-2h6v2zm4-4H6v-2h10v2zm0-4H6V7h10v2z" />
+            </svg>
+            <span>Chat History</span>
+            {earlierSessions.length ? (
+              <span className="chat-history-count-badge">{earlierSessions.length}</span>
+            ) : null}
+          </button>
+        </div>
       </header>
 
       <section className="call-screen__voice" aria-label="Voice call">
@@ -460,42 +448,10 @@ export function CallScreen({ onBack }: CallScreenProps) {
                 ))}
             </dl>
           ) : <p className="empty-detail">Listening for useful details…</p>}
-
-          <div className="tickets-raised" aria-label="Tickets raised">
-            <div className="tickets-raised__header">
-              <p className="section-kicker">Tickets Raised</p>
-              <span>{visibleRaisedTickets.length}</span>
-            </div>
-            {visibleRaisedTickets.length ? (
-              <ul className="tickets-raised__list">
-                {visibleRaisedTickets.map((ticket) => (
-                  <li key={ticket.id} className="ticket-raised-item">
-                    <div className="ticket-raised-item__top">
-                      <strong>{ticketHeadline(ticket)}</strong>
-                      <span
-                        className={`ticket-status-badge ticket-status-badge--${ticketStatusTone(ticket.status)}`}
-                        title={ticket.display_status_detail}
-                      >
-                        {ticket.display_status}
-                      </span>
-                    </div>
-                    <p className="ticket-raised-item__detail">{ticket.display_status_detail}</p>
-                    {ticket.similar_count > 1 ? (
-                      <p className="ticket-raised-item__crowd">
-                        {ticket.similar_count} students facing the same issue
-                      </p>
-                    ) : null}
-                    {ticket.parent_ticket_id ? (
-                      <p className="ticket-raised-item__crowd">Grouped with an existing open query</p>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="empty-detail">No tickets raised in this conversation yet.</p>
-            )}
-          </div>
         </article>
+
+        {/* Distinct Raised Tickets Card with visible highlight for reply status */}
+        <RaisedTicketsCard tickets={raisedTickets} />
 
         <article className="shared-links-card">
           <p className="section-kicker">From your conversation</p>
@@ -537,30 +493,6 @@ export function CallScreen({ onBack }: CallScreenProps) {
             </div>
           )}
         </article>
-
-        <article className="voice-history voice-history--sessions">
-          <p className="section-kicker">Previous chats</p>
-          <h2>Conversation history</h2>
-          <div className="session-history">
-            {earlierSessions.map((history) => (
-              <details className="session-history__item" key={history.session_id}>
-                <summary>
-                  <span>{sessionTitle(history)}</span>
-                  <time>{sessionDate(history.started_at)}</time>
-                </summary>
-                <div className="session-history__turns">
-                  {history.turns.map((turn) => (
-                    <p key={turn.id}>
-                      <strong>{turn.speaker === "student" ? "You" : "Margdarshak"}:</strong>{" "}
-                      {turn.content}
-                    </p>
-                  ))}
-                </div>
-              </details>
-            ))}
-            {!earlierSessions.length ? <p className="empty-detail">No previous conversations yet.</p> : null}
-          </div>
-        </article>
       </section>
 
       <footer className="call-screen__controls">
@@ -592,6 +524,13 @@ export function CallScreen({ onBack }: CallScreenProps) {
           />
         ) : null}
       </div>
+
+      {/* Gemini/ChatGPT-style Chat History Side Panel Drawer */}
+      <ChatHistoryDrawer
+        isOpen={sidePanelOpen}
+        onClose={() => setSidePanelOpen(false)}
+        sessions={earlierSessions}
+      />
     </main>
   );
 }

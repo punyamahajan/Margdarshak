@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 import httpx
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, update
 
 from app.core.config import get_settings
 from app.db.session_factory import get_session_factory
@@ -35,7 +35,7 @@ CONNECTING_MESSAGE = "Connecting to coordinator."
 
 STOPWORDS = {
     "a", "an", "and", "are", "for", "from", "have", "i", "in", "is", "it",
-    "me", "my", "of", "on", "or", "please", "the", "to", "with",
+    "me", "my", "of", "on", "or", "please", "the", "to", "with", "that", "this",
 }
 
 ACK_PATTERN = re.compile(
@@ -45,16 +45,51 @@ ACK_PATTERN = re.compile(
 )
 PLACEMENT_PATTERN = re.compile(
     r"\b(placement|drive|company|interview|job|application|apply|portal|"
-    r"assessment|oa|deadline|offer|resume|document|eligible|eligibility|"
+    r"assessment|oa|deadline|offer|resume|cv|document|eligible|eligibility|"
+    r"riverbank|acme|northstar|greenfield|fintech|link|url|test|exam|"
     r"tcs|amazon|infosys|wipro|accenture|google|microsoft|deloitte)\b",
     re.IGNORECASE,
 )
 ISSUE_PATTERN = re.compile(
     r"\b(not working|failed|failing|rejected|reject|error|issue|problem|"
-    r"unable|cannot|can't|won't|expired|blocked|missing|stuck|broken|"
-    r"upload|login|submit|open|reopen|access)\b",
+    r"unable|cannot|can't|won't|expired|blocked|missing|stuck|broken|down|"
+    r"upload|login|submit|open|reopen|access|404|timeout|crash)\b",
     re.IGNORECASE,
 )
+COMPANY_PATTERN = re.compile(
+    r"\b(riverbank|acme|northstar|greenfield|fintech|tcs|infosys|amazon|google|"
+    r"wipro|accenture|microsoft|deloitte|cognizant|capgemini|ibm|oracle|cisco|"
+    r"placement portal|college portal|campus portal|portal)\b",
+    re.IGNORECASE,
+)
+
+SYNONYM_MAP: dict[str, str] = {
+    "test": "assessment",
+    "exam": "assessment",
+    "oa": "assessment",
+    "coding": "assessment",
+    "url": "link",
+    "website": "link",
+    "webpage": "link",
+    "failing": "broken",
+    "failed": "broken",
+    "error": "broken",
+    "glitch": "broken",
+    "issue": "broken",
+    "problem": "broken",
+    "crash": "broken",
+    "down": "broken",
+    "fintech": "riverbank",
+    "cloud": "acme",
+    "analytics": "northstar",
+    "cv": "resume",
+    "uploading": "upload",
+    "submitting": "submit",
+    "submission": "submit",
+    "ineligible": "eligibility",
+    "cgpa": "eligibility",
+    "criteria": "eligibility",
+}
 
 
 @dataclass
@@ -83,20 +118,45 @@ class RoutingDecision:
         }
 
 
+def _extract_company_name(text: str) -> str | None:
+    text_lower = text.lower()
+    mapping = {
+        "riverbank": "Riverbank Fintech Labs",
+        "fintech": "Riverbank Fintech Labs",
+        "acme": "Acme Cloud Systems",
+        "northstar": "Northstar Analytics",
+        "greenfield": "Greenfield Robotics",
+        "tcs": "TCS",
+        "infosys": "Infosys",
+        "amazon": "Amazon",
+        "google": "Google",
+        "wipro": "Wipro",
+        "accenture": "Accenture",
+        "microsoft": "Microsoft",
+        "deloitte": "Deloitte",
+        "cognizant": "Cognizant",
+        "capgemini": "Capgemini",
+        "portal": "Placement Portal",
+    }
+    for key, name in mapping.items():
+        if key in text_lower:
+            return name
+    return None
+
+
 def is_routable_query(text: str) -> bool:
-    """Route once the student has described a concrete support issue."""
+    """Route once the student has described both the company/target and a concrete issue."""
 
     query = " ".join(text.split()).strip()
-    if len(query) < 18 or ACK_PATTERN.match(query):
+    if len(query) < 15 or ACK_PATTERN.match(query):
         return False
+    has_company = bool(COMPANY_PATTERN.search(query))
     has_placement = bool(PLACEMENT_PATTERN.search(query))
     has_issue = bool(ISSUE_PATTERN.search(query))
-    if has_placement and has_issue:
+
+    if has_company and has_issue:
         return True
-    # Support-chat style: a clear placement statement with enough detail.
-    if has_placement and len(query) >= 35:
-        return True
-    if has_issue and len(query) >= 45:
+    if has_company and has_placement and len(query) >= 28:
         return True
     return False
 
@@ -109,13 +169,57 @@ def _tokenize(text: str) -> set[str]:
     }
 
 
+def _canonical_tokens(text: str) -> set[str]:
+    raw_tokens = _tokenize(text)
+    return {SYNONYM_MAP.get(token, token) for token in raw_tokens}
+
+
 def _lexical_similarity(left: str, right: str) -> float:
-    left_tokens = _tokenize(left)
-    right_tokens = _tokenize(right)
+    left_tokens = _canonical_tokens(left)
+    right_tokens = _canonical_tokens(right)
     if not left_tokens or not right_tokens:
         return 0.0
     overlap = left_tokens.intersection(right_tokens)
-    return len(overlap) / max(len(left_tokens.union(right_tokens)), 1)
+    if not overlap:
+        return 0.0
+
+    overlap_coef = len(overlap) / min(len(left_tokens), len(right_tokens))
+    jaccard = len(overlap) / len(left_tokens.union(right_tokens))
+
+    companies = {
+        "riverbank", "acme", "northstar", "greenfield", "tcs", "infosys", "amazon",
+        "google", "wipro", "accenture", "microsoft", "deloitte", "cognizant",
+    }
+    issues = {
+        "assessment", "link", "broken", "upload", "submit", "login", "eligibility",
+        "resume", "backlog", "deadline", "slot", "clash",
+    }
+
+    left_companies = left_tokens.intersection(companies)
+    right_companies = right_tokens.intersection(companies)
+
+    # Different companies must never match
+    if left_companies and right_companies and left_companies != right_companies:
+        return 0.0
+
+    # If one query specifies a company and the other doesn't, reject
+    if (left_companies and not right_companies) or (right_companies and not left_companies):
+        return 0.0
+
+    has_same_company = bool(overlap.intersection(companies))
+    has_same_issue = bool(overlap.intersection(issues))
+
+    # If both queries describe the same company and the same issue type
+    if has_same_company and has_same_issue:
+        return max(overlap_coef, 0.85)
+    # If both describe the same company and an assessment/link issue
+    if has_same_company and ("assessment" in overlap or "link" in overlap):
+        return max(overlap_coef, 0.80)
+    # If both describe a portal failure
+    if "portal" in overlap and has_same_issue:
+        return max(overlap_coef, 0.78)
+
+    return (overlap_coef * 0.7) + (jaccard * 0.3)
 
 
 def _extract_json(text: str) -> dict[str, Any] | None:
@@ -145,11 +249,19 @@ def _similarity_prompt(query: str, candidates: list[dict[str, str]]) -> str:
     return (
         "You route campus placement support tickets.\n"
         "Decide whether the NEW QUERY is semantically the same issue as one of the "
-        "EXISTING OPEN TICKETS (same company/drive and same blocker).\n"
+        "EXISTING OPEN TICKETS.\n"
+        "Students frequently describe the exact same problem using different wording. For example:\n"
+        "- 'Riverbank OA link not opening' matches 'Riverbank test link broken 404' or 'cannot open assessment url for riverbank'\n"
+        "- 'Acme cloud portal crash on submit' matches 'unable to submit assessment for Acme' or 'Acme test submit error'\n"
+        "- 'Northstar interview clash' matches 'Northstar analytics slot conflict with lab exam'\n"
+        "- 'Placement portal OTP not arriving' matches 'cannot login to placement portal OTP failed'\n\n"
+        "Rules:\n"
+        "1. If the company or context matches AND the core blocker/issue category is the same, this is a MATCH.\n"
+        "2. Score >= 0.70 (e.g., 0.85-0.95) when they describe the same underlying grievance or drive.\n"
+        "3. Only set match=false if they clearly refer to different companies or completely unrelated topics (e.g. resume formatting vs online assessment 404).\n\n"
         "Reply with JSON only:\n"
-        '{"match": true|false, "ticket_id": "<uuid or null>", "score": 0.0-1.0, '
-        '"reason": "short"}\n'
-        "Set match=true only when score >= 0.75.\n\n"
+        '{"match": true|false, "ticket_id": "<uuid or null>", "score": 0.0-1.0, "reason": "short"}\n'
+        "Set match=true when score >= 0.65.\n\n"
         f"NEW QUERY:\n{query}\n\nEXISTING OPEN TICKETS:\n{numbered or '(none)'}"
     )
 
@@ -286,7 +398,7 @@ async def find_similar_ticket(
         ticket_id = str(llm_result.get("ticket_id") or "")
         score = float(llm_result.get("score") or 0.0)
         matched = by_id.get(ticket_id)
-        if matched is not None and score >= min(threshold, 0.75):
+        if matched is not None and score >= min(threshold, 0.65):
             return matched, score, provider
 
     best_ticket: Ticket | None = None
@@ -296,8 +408,8 @@ async def find_similar_ticket(
         if score > best_score:
             best_ticket = ticket
             best_score = score
-    # Lexical fallback is stricter so weak overlaps do not false-group.
-    lexical_threshold = max(threshold, 0.55)
+    # Lexical fallback with canonical domain weighting
+    lexical_threshold = min(max(threshold, 0.50), 0.65)
     if best_ticket is not None and best_score >= lexical_threshold:
         return best_ticket, best_score, provider or "lexical"
     return None, best_score, provider or "lexical"
@@ -354,13 +466,21 @@ async def _group_under_parent(
             ticket.parent_ticket_id = parent.id
             ticket.status = parent.status
             ticket.escalated_to = parent.escalated_to
-            parent.similar_count = int(parent.similar_count or 1) + 1
+            new_count = int(parent.similar_count or 1) + 1
+            parent.similar_count = new_count
+            ticket.similar_count = new_count
+            # Propagate updated similar_count to all sibling child tickets as well
+            await db.execute(
+                update(Ticket)
+                .where(Ticket.parent_ticket_id == parent.id)
+                .values(similar_count=new_count)
+            )
             await db.flush()
             return {
                 "parent_id": parent.id,
                 "parent_summary": parent.issue_summary,
                 "parent_escalated_to": parent.escalated_to,
-                "similar_count": int(parent.similar_count),
+                "similar_count": new_count,
             }
 
 
@@ -376,6 +496,15 @@ async def _mark_ticket_summary(
                 raise ValueError(f"ticket {ticket_id} does not exist")
             ticket.issue_summary = issue_summary
             ticket.confidence_score = confidence_score
+
+
+async def _is_ticket_already_escalated(ticket_id: uuid.UUID) -> bool:
+    try:
+        async with get_session_factory()() as db:
+            ticket = await db.get(Ticket, ticket_id)
+            return bool(ticket and ticket.status == TicketStatus.ESCALATED)
+    except Exception:
+        return False
 
 
 async def _agent_channel_context(
@@ -410,17 +539,26 @@ async def route_student_query(
     query = " ".join(query_text.split()).strip()
     if not force and not is_routable_query(query):
         await _mark_ticket_summary(ticket_id, query, confidence_score)
+        if re.search(r"\b(test|oa|assessment|exam|link|url)\b", query, re.IGNORECASE):
+            clarification_msg = "Which company or placement drive is this test link for?"
+        elif re.search(r"\b(interview|slot|clash)\b", query, re.IGNORECASE):
+            clarification_msg = "Which company is this interview clash for?"
+        elif re.search(r"\b(resume|cv|document|upload)\b", query, re.IGNORECASE):
+            clarification_msg = "Which company's portal are you trying to upload documents to?"
+        else:
+            clarification_msg = "Which company or placement drive are you facing this issue with?"
+
         await update_case_card(
             ticket_id,
             {
                 "routing_decision": "collecting",
                 "issue_summary": query,
-                "student_reply": None,
+                "student_reply": clarification_msg,
             },
         )
         return RoutingDecision(
             kind="collecting",
-            student_message="",
+            student_message=clarification_msg,
             ticket_id=ticket_id,
         )
 
@@ -435,9 +573,15 @@ async def route_student_query(
         parent_id = grouped["parent_id"]
         parent_summary = grouped["parent_summary"]
         parent_escalated_to = grouped["parent_escalated_to"]
+        company = _extract_company_name(query) or _extract_company_name(parent_summary)
         student_message = (
             f"{count} students are facing the same issue — waiting for a reply."
         )
+        if company:
+            student_message = (
+                f"{count} students are facing the same issue — waiting for a reply. "
+                f"I have grouped your report for {company} and alerted the placement coordinator."
+            )
         await update_case_card(
             ticket_id,
             {
@@ -478,6 +622,23 @@ async def route_student_query(
             parent_ticket_id=parent_id,
             similar_count=count,
             matched_summary=parent_summary,
+            llm_provider=provider,
+            routing_score=score,
+        )
+
+    if await _is_ticket_already_escalated(ticket_id):
+        await update_case_card(
+            ticket_id,
+            {
+                "issue_summary": query,
+                "routing_score": round(score, 3) if score else None,
+            },
+        )
+        return RoutingDecision(
+            kind="escalated",
+            student_message="",
+            ticket_id=ticket_id,
+            similar_count=1,
             llm_provider=provider,
             routing_score=score,
         )
